@@ -7,11 +7,10 @@ Steps interact only with:
   - The processor module (lambda/processor.py)
 """
 
-import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
+import anthropic
 from behave import given, when, then
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "lambda"))
@@ -52,14 +51,9 @@ def step_key_in_db(context, key):
 def step_run(context):
     import processor
 
-    # Anthropic is mocked here so the processor can run end-to-end without
-    # a real API key. Tests make no assertions about it.
-    anthropic_client = MagicMock()
-    anthropic_client.messages.create.return_value.content = [
-        MagicMock(text=json.dumps({"summary": "test photo", "tags": ["test-tag"]}))
-    ]
-
-    context.result = processor.process(context.location, context.conn, anthropic_client)
+    context.result = processor.process(
+        context.location, context.conn, anthropic.Anthropic()
+    )
 
 
 # ---------------------------------------------------------------------------

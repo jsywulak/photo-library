@@ -8,9 +8,15 @@ back the transaction.
 """
 
 import base64
+import io
 import json
 import os
 from pathlib import Path
+
+from PIL import Image
+
+# Anthropic's base64 image limit is 5 MB.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 def process(location: str, db_conn, anthropic_client) -> dict:
@@ -33,13 +39,31 @@ def process(location: str, db_conn, anthropic_client) -> dict:
     return {"discovered": discovered, "processed": processed, "skipped": skipped}
 
 
+def _prepare_image(path: Path) -> bytes:
+    """Return image bytes resized to fit within Anthropic's 5 MB limit."""
+    image_bytes = path.read_bytes()
+    if len(image_bytes) <= MAX_IMAGE_BYTES:
+        return image_bytes
+
+    img = Image.open(io.BytesIO(image_bytes))
+    img = img.convert("RGB")
+
+    # Halve dimensions until the encoded size fits.
+    while True:
+        img = img.resize((img.width // 2, img.height // 2), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        if buf.tell() <= MAX_IMAGE_BYTES:
+            return buf.getvalue()
+
+
 def _process_photo(cur, anthropic_client, location: str, filename: str) -> None:
-    image_bytes = Path(location, filename).read_bytes()
+    image_bytes = _prepare_image(Path(location, filename))
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     response = anthropic_client.messages.create(
         model="claude-opus-4-6",
-        max_tokens=1024,
+        max_tokens=2048,
         messages=[{
             "role": "user",
             "content": [
@@ -54,9 +78,9 @@ def _process_photo(cur, anthropic_client, location: str, filename: str) -> None:
                 {
                     "type": "text",
                     "text": (
-                        "Analyze this photo and respond with a JSON object containing:\n"
+                        "Analyze this photo. Focus on the aesthetic elements and visual design of the room, especially the florals and the colors. Ignore any people in the photos. Ignore any technical aspects of the photography itself. If you recognize any specifically Indian ceremonianal items, please call those out. Respond with a JSON object containing:\n"
                         '  "summary": a one-sentence description\n'
-                        '  "tags": a list of 5-10 descriptive single words or short phrases\n'
+                        '  "tags": a list of 20-30 descriptive single words (ideal) or short phases (less preferred)\n'
                         "Respond with JSON only, no other text."
                     ),
                 },
@@ -64,7 +88,8 @@ def _process_photo(cur, anthropic_client, location: str, filename: str) -> None:
         }],
     )
 
-    result = json.loads(response.content[0].text)
+    text = response.content[0].text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    result = json.loads(text)
 
     cur.execute(
         "INSERT INTO photos (s3_key, processed_at) VALUES (%s, NOW()) RETURNING id",
