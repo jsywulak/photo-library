@@ -1,17 +1,16 @@
 """
-processor.py — core photo tagging logic.
+processor.py — single-image tagging logic for AWS Lambda.
 
-process() is the main entry point. It lists photos from a local directory,
-skips any already recorded in the database, and calls the Anthropic vision
-API to tag new ones. The caller is responsible for committing or rolling
-back the transaction.
+process_one() is the Lambda entry point. It receives an s3_key and the image
+bytes, checks whether the photo has already been processed, and if not calls
+the Anthropic vision API to tag it and stores the results. The caller is
+responsible for fetching the image bytes and for committing or rolling back
+the transaction.
 """
 
 import base64
 import io
 import json
-import os
-from pathlib import Path
 
 from PIL import Image
 
@@ -19,34 +18,25 @@ from PIL import Image
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
-def process(location: str, db_conn, anthropic_client) -> dict:
-    filenames = [f for f in os.listdir(location) if not f.startswith(".")]
-
-    discovered = len(filenames)
-    processed = 0
-    skipped = 0
-
+def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
+    """Process a single image. Returns 'processed' or 'skipped'."""
     with db_conn.cursor() as cur:
-        for filename in filenames:
-            cur.execute("SELECT id FROM photos WHERE s3_key = %s", (filename,))
-            if cur.fetchone():
-                skipped += 1
-                continue
+        cur.execute("SELECT id FROM photos WHERE s3_key = %s", (s3_key,))
+        if cur.fetchone():
+            return "skipped"
 
-            _process_photo(cur, anthropic_client, location, filename)
-            processed += 1
+        image_bytes = _prepare_image(image_bytes)
+        _tag_photo(cur, anthropic_client, s3_key, image_bytes)
 
-    return {"discovered": discovered, "processed": processed, "skipped": skipped}
+    return "processed"
 
 
-def _prepare_image(path: Path) -> bytes:
-    """Return image bytes resized to fit within Anthropic's 5 MB limit."""
-    image_bytes = path.read_bytes()
+def _prepare_image(image_bytes: bytes) -> bytes:
+    """Resize image bytes to fit within Anthropic's 5 MB limit if needed."""
     if len(image_bytes) <= MAX_IMAGE_BYTES:
         return image_bytes
 
-    img = Image.open(io.BytesIO(image_bytes))
-    img = img.convert("RGB")
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
     # Halve dimensions until the encoded size fits.
     while True:
@@ -57,8 +47,7 @@ def _prepare_image(path: Path) -> bytes:
             return buf.getvalue()
 
 
-def _process_photo(cur, anthropic_client, location: str, filename: str) -> None:
-    image_bytes = _prepare_image(Path(location, filename))
+def _tag_photo(cur, anthropic_client, s3_key: str, image_bytes: bytes) -> None:
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     response = anthropic_client.messages.create(
@@ -93,7 +82,7 @@ def _process_photo(cur, anthropic_client, location: str, filename: str) -> None:
 
     cur.execute(
         "INSERT INTO photos (s3_key, processed_at) VALUES (%s, NOW()) RETURNING id",
-        (filename,),
+        (s3_key,),
     )
     photo_id = cur.fetchone()[0]
 
