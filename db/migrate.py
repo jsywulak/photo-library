@@ -68,8 +68,8 @@ def apply(dsn: str) -> None:
 
 if __name__ == "__main__":
     load_dotenv(Path(__file__).parent.parent / ".env")
-    dsn = os.environ.get("DATABASE_URL")
+    dsn = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("DATABASE_URL")
     if not dsn:
-        print("ERROR: DATABASE_URL not set.", file=sys.stderr)
+        print("ERROR: DATABASE_URL not set and no URL argument provided.", file=sys.stderr)
         sys.exit(1)
     apply(dsn)
