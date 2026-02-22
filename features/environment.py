@@ -41,6 +41,14 @@ def after_scenario(context, scenario):
             conn.close()
         except Exception:
             pass
+    # Clean up S3 objects uploaded directly by searcher Lambda tests.
+    if hasattr(context, "searcher_s3_uploads"):
+        s3 = boto3.client("s3")
+        for bucket, key in context.searcher_s3_uploads:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
     # Clean up Neon records seeded directly by searcher Lambda tests.
     if hasattr(context, "neon_test_s3_keys"):
         try:

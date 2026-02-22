@@ -21,6 +21,10 @@ Parameters:
     NoEcho: true
     Description: Secret key required in the x-api-key request header
 
+  PhotosBucket:
+    Type: String
+    Description: S3 bucket containing the photos (for presigned URL generation)
+
 Resources:
   SearcherRole:
     Type: AWS::IAM::Role
@@ -34,6 +38,14 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3PresignedUrlPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${PhotosBucket}/*'
 
   SearcherFunction:
     Type: AWS::Lambda::Function
@@ -51,6 +63,7 @@ Resources:
         Variables:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
           API_KEY: !Ref ApiKey
+          S3_BUCKET: !Ref PhotosBucket
 
   SearcherFunctionUrl:
     Type: AWS::Lambda::Url

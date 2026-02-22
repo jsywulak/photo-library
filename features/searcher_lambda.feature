@@ -26,3 +26,16 @@ Feature: Searcher Lambda
     Given the searcher Lambda is deployed
     When the Function URL is called with tags "cat" and an incorrect API key
     Then the HTTP response status should be 401
+
+  Scenario: Search results include a presigned URL
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "cat"
+    When the Lambda is invoked with tags "cat"
+    Then each result should include a presigned URL
+
+  Scenario: Presigned URL for a photo in S3 is accessible
+    Given the searcher Lambda is deployed
+    And a photo is uploaded to S3 and tagged in the database with "cat"
+    When the Function URL is called with tags "cat" and the correct API key
+    Then the HTTP response status should be 200
+    And the presigned URL for the photo should return HTTP 200

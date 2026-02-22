@@ -17,6 +17,7 @@ import json
 import logging
 import os
 
+import boto3
 import psycopg2
 
 from searcher import search
@@ -31,6 +32,12 @@ if not _DB_URL:
 _API_KEY = os.environ.get("API_KEY")
 if not _API_KEY:
     raise RuntimeError("API_KEY environment variable is not set")
+
+_S3_BUCKET = os.environ.get("S3_BUCKET")
+if not _S3_BUCKET:
+    raise RuntimeError("S3_BUCKET environment variable is not set")
+
+_s3_client = boto3.client("s3")
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -72,7 +79,7 @@ def lambda_handler(event, context):
 
     conn = psycopg2.connect(_DB_URL, connect_timeout=10)
     try:
-        results = search(tags, conn)
+        results = search(tags, conn, _s3_client, _S3_BUCKET)
         logger.info("Found %d results", len(results))
         return _http_response(200, results) if is_function_url else results
     finally:

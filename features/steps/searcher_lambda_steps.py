@@ -164,3 +164,63 @@ def step_response_contains_photo(context):
     assert context.last_photo_key in result_keys, (
         f"Expected {context.last_photo_key!r} in response, got: {result_keys}"
     )
+
+
+@given('a photo is uploaded to S3 and tagged in the database with "{tags}"')
+def step_upload_to_s3_and_seed(context, tags):
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    s3_key = f"{prefix}photo.jpg"
+    bucket = os.environ["S3_BUCKET"]
+
+    # Minimal valid JPEG bytes (1x1 pixel)
+    minimal_jpeg = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
+        b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
+        b"\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\x87"
+        b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
+        b"\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00"
+        b"\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b"
+        b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb\xd2\x8a(\x03\xff\xd9"
+    )
+
+    boto3.client("s3").put_object(
+        Bucket=bucket, Key=s3_key, Body=minimal_jpeg, ContentType="image/jpeg"
+    )
+    context.searcher_s3_uploads.append((bucket, s3_key))
+
+    tag_list = [t.strip() for t in tags.split(",")]
+    conn = _neon_conn()
+    _seed_photo(conn, s3_key, tag_list)
+    conn.close()
+
+    context.neon_test_s3_keys.append(s3_key)
+    context.last_photo_key = s3_key
+
+
+@then("each result should include a presigned URL")
+def step_results_have_url(context):
+    assert context.search_results, "Expected at least one result"
+    for result in context.search_results:
+        assert "url" in result, f"Result missing 'url' field: {result}"
+        assert result["url"].startswith("https://"), (
+            f"Expected HTTPS URL, got: {result['url']!r}"
+        )
+
+
+@then("the presigned URL for the photo should return HTTP 200")
+def step_presigned_url_accessible(context):
+    result = next(
+        (r for r in context.http_body if r["s3_key"] == context.last_photo_key), None
+    )
+    assert result is not None, f"Photo {context.last_photo_key!r} not found in results"
+    assert "url" in result, f"Result missing 'url' field: {result}"
+
+    req = urllib.request.Request(result["url"], method="GET")
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200, f"Expected 200 from presigned URL, got {resp.status}"
