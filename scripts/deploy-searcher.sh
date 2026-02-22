@@ -9,6 +9,7 @@ aws cloudformation deploy \
   --parameter-overrides \
     DeploymentBucket="${DEPLOYMENT_BUCKET}" \
     NeonDatabaseUrl="${NEON_DATABASE_URL}" \
+    ApiKey="${API_KEY}" \
   --capabilities CAPABILITY_IAM
 
 # Push the new code to Lambda (CloudFormation doesn't detect S3 object changes)

@@ -16,6 +16,11 @@ Parameters:
     NoEcho: true
     Description: Neon PostgreSQL connection string
 
+  ApiKey:
+    Type: String
+    NoEcho: true
+    Description: Secret key required in the x-api-key request header
+
 Resources:
   SearcherRole:
     Type: AWS::IAM::Role
@@ -45,8 +50,34 @@ Resources:
       Environment:
         Variables:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
+          API_KEY: !Ref ApiKey
+
+  SearcherFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !GetAtt SearcherFunction.Arn
+
+  SearcherFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SearcherFunction.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  SearcherFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt SearcherFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "*"
 
 Outputs:
   SearcherFunctionName:
     Description: Lambda function name (use as SEARCHER_LAMBDA_NAME in .env)
     Value: !Ref SearcherFunction
+
+  SearcherFunctionUrl:
+    Description: HTTP endpoint for the searcher (use as SEARCHER_URL in .env)
+    Value: !GetAtt SearcherFunctionUrl.FunctionUrl

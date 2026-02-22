@@ -15,6 +15,7 @@ import uuid
 
 import boto3
 import psycopg2
+import urllib.request
 from behave import given, then, when
 
 
@@ -114,4 +115,52 @@ def step_ranking(context):
     last_idx = result_keys.index(context.last_photo_key)
     assert best_idx < last_idx, (
         f"Expected {context.best_photo_key!r} to rank above {context.last_photo_key!r}"
+    )
+
+
+@when('the Function URL is called with tags "{tags}" and the correct API key')
+def step_function_url_correct_key(context, tags):
+    tag_list = [t.strip() for t in tags.split(",")]
+    url = os.environ["SEARCHER_URL"]
+    api_key = os.environ["API_KEY"]
+    body = json.dumps({"tags": tag_list}).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": api_key},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+
+
+@when('the Function URL is called with tags "{tags}" and an incorrect API key')
+def step_function_url_wrong_key(context, tags):
+    tag_list = [t.strip() for t in tags.split(",")]
+    url = os.environ["SEARCHER_URL"]
+    body = json.dumps({"tags": tag_list}).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": "wrong-key"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
+@then("the HTTP response status should be {status:d}")
+def step_http_status(context, status):
+    assert context.http_status == status, (
+        f"Expected HTTP {status}, got {context.http_status}"
+    )
+
+
+@then("the response body should contain the photo")
+def step_response_contains_photo(context):
+    result_keys = {r["s3_key"] for r in context.http_body}
+    assert context.last_photo_key in result_keys, (
+        f"Expected {context.last_photo_key!r} in response, got: {result_keys}"
     )
