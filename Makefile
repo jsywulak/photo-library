@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install db-start db-shell db-stop migrate migrate-neon test process search db-drop
+.PHONY: install db-start db-shell db-stop migrate migrate-neon test process search db-drop package-processor deploy-processor
 
 install:
 	pip install -r requirements.txt
@@ -34,4 +34,10 @@ search:
 
 db-drop:
 	@bash scripts/db-drop.sh
+
+package-processor:
+	@bash scripts/package-processor.sh
+
+deploy-processor: package-processor
+	@bash scripts/deploy-processor.sh
 

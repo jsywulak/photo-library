@@ -1,6 +1,7 @@
 import os
 import shutil
 
+import boto3
 import psycopg2
 from dotenv import load_dotenv
 
@@ -24,3 +25,19 @@ def after_scenario(context, scenario):
         context.conn.close()
     for d in context.temp_dirs:
         shutil.rmtree(d, ignore_errors=True)
+    # Clean up S3 object and Neon record written by Lambda integration tests.
+    if hasattr(context, "test_s3_key"):
+        try:
+            boto3.client("s3").delete_object(
+                Bucket=context.test_s3_bucket, Key=context.test_s3_key
+            )
+        except Exception:
+            pass
+        try:
+            conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM photos WHERE s3_key = %s", (context.test_s3_key,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass

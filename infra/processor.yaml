@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Processor Lambda and photos S3 bucket
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  DeploymentKey:
+    Type: String
+    Default: processor.zip
+    Description: S3 key of the Lambda deployment zip
+
+  NeonDatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Neon PostgreSQL connection string
+
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic API key
+
+Resources:
+  PhotosBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-photos'
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ProcessorFunction.Arn
+
+  ProcessorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadPhotos
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-photos/*'
+
+  ProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-processor'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !GetAtt ProcessorRole.Arn
+      Timeout: 120
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
+      Environment:
+        Variables:
+          NEON_DATABASE_URL: !Ref NeonDatabaseUrl
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+
+  ProcessorInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ProcessorFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub 'arn:aws:s3:::${AWS::StackName}-photos'
+
+Outputs:
+  PhotosBucketName:
+    Description: S3 bucket for photos
+    Value: !Ref PhotosBucket
+
+  ProcessorFunctionName:
+    Description: Lambda function name (use as PROCESSOR_LAMBDA_NAME in .env)
+    Value: !Ref ProcessorFunction
