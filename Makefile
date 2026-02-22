@@ -3,24 +3,24 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install db-start db-shell db-stop migrate migrate-neon test process search db-drop package-processor deploy-processor
+.PHONY: install local-db-start local-db-shell local-db-stop local-migrate neon-migrate test process search db-drop package-processor deploy-processor package-searcher deploy-searcher
 
 install:
 	pip install -r requirements.txt
 
-db-start:
+local-db-start:
 	@bash scripts/db-start.sh
 
-db-shell:
+local-db-shell:
 	docker exec -it $(CONTAINER_NAME) psql -U $(DB_USER) -d $(DB_NAME)
 
-db-stop:
+local-db-stop:
 	docker stop $(CONTAINER_NAME)
 
-migrate:
+local-migrate:
 	python db/migrate.py
 
-migrate-neon:
+neon-migrate:
 	python db/migrate.py $(NEON_DATABASE_URL)
 
 test:
@@ -40,4 +40,10 @@ package-processor:
 
 deploy-processor: package-processor
 	@bash scripts/deploy-processor.sh
+
+package-searcher:
+	@bash scripts/package-searcher.sh
+
+deploy-searcher: package-searcher
+	@bash scripts/deploy-searcher.sh
 

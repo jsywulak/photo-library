@@ -25,7 +25,7 @@ def after_scenario(context, scenario):
         context.conn.close()
     for d in context.temp_dirs:
         shutil.rmtree(d, ignore_errors=True)
-    # Clean up S3 object and Neon record written by Lambda integration tests.
+    # Clean up S3 object and Neon record written by processor Lambda tests.
     if hasattr(context, "test_s3_key"):
         try:
             boto3.client("s3").delete_object(
@@ -37,6 +37,19 @@ def after_scenario(context, scenario):
             conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM photos WHERE s3_key = %s", (context.test_s3_key,))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+    # Clean up Neon records seeded directly by searcher Lambda tests.
+    if hasattr(context, "neon_test_s3_keys"):
+        try:
+            conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM photos WHERE s3_key = ANY(%s)",
+                    (context.neon_test_s3_keys,),
+                )
             conn.commit()
             conn.close()
         except Exception:

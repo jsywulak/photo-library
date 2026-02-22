@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Searcher Lambda
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  DeploymentKey:
+    Type: String
+    Default: searcher.zip
+    Description: S3 key of the Lambda deployment zip
+
+  NeonDatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Neon PostgreSQL connection string
+
+Resources:
+  SearcherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  SearcherFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-searcher'
+      Runtime: python3.12
+      Handler: searcher_handler.lambda_handler
+      Role: !GetAtt SearcherRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
+      Environment:
+        Variables:
+          NEON_DATABASE_URL: !Ref NeonDatabaseUrl
+
+Outputs:
+  SearcherFunctionName:
+    Description: Lambda function name (use as SEARCHER_LAMBDA_NAME in .env)
+    Value: !Ref SearcherFunction
