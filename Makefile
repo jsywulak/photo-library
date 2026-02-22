@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install db-start db-shell db-stop migrate test process db-drop
+.PHONY: install db-start db-shell db-stop migrate test process search db-drop
 
 install:
 	pip install -r requirements.txt
@@ -25,6 +25,9 @@ test:
 
 process:
 	python scripts/run_processor.py $(DIR)
+
+search:
+	python scripts/run_searcher.py
 
 db-drop:
 	@bash scripts/db-drop.sh

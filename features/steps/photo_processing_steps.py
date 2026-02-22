@@ -7,7 +7,9 @@ Steps interact only with:
   - The processor module (lambda/processor.py)
 """
 
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import anthropic
@@ -30,11 +32,16 @@ def step_db_empty(context):
 
 @given('a local directory with photos "{photos}"')
 def step_local_photos(context, photos):
-    # Verify the requested filenames exist in images/ before running.
+    # Copy only the named files into a temp dir so the processor sees exactly
+    # the photos specified in the scenario, regardless of what else is in images/.
     names = [p.strip() for p in photos.split(",")]
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
     for name in names:
-        assert (IMAGES_DIR / name).exists(), f"Sample image not found: images/{name}"
-    context.location = str(IMAGES_DIR)
+        src = IMAGES_DIR / name
+        assert src.exists(), f"Sample image not found: images/{name}"
+        shutil.copy(src, tmp)
+    context.location = tmp
 
 
 @given('"{key}" is already in the database')
