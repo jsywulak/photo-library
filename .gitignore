@@ -6,4 +6,5 @@ __pycache__/
 venv/
 .venv/
 images/
-dist/frontend/config.js
+dist/
+frontend/config.js
