@@ -20,7 +20,7 @@ import os
 import boto3
 import psycopg2
 
-from searcher import search
+from searcher import get_random_tags, search
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -58,13 +58,23 @@ def lambda_handler(event, context):
     is_function_url = "requestContext" in event
 
     if is_function_url:
-        method = event.get("requestContext", {}).get("http", {}).get("method", "").upper()
+        http_ctx = event.get("requestContext", {}).get("http", {})
+        method = http_ctx.get("method", "").upper()
+        path = http_ctx.get("path", "/")
+
         if method == "OPTIONS":
             return _http_response(200, {})
 
         headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
         if headers.get("x-api-key") != _API_KEY:
             return _http_response(401, {"error": "Unauthorized"})
+
+        if method == "GET" and path == "/tags":
+            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+            try:
+                return _http_response(200, get_random_tags(conn))
+            finally:
+                conn.close()
 
         try:
             payload = json.loads(event.get("body") or "{}")

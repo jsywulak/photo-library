@@ -13,3 +13,11 @@ Feature: Cloud infrastructure
       | photos     |
       | tags       |
       | photo_tags |
+
+  Scenario: Frontend bucket exists and has website hosting enabled
+    Given a frontend bucket name is configured
+    Then the bucket should have static website hosting enabled
+
+  Scenario: Frontend is publicly accessible
+    Given a frontend bucket name is configured
+    Then the website URL should return HTTP 200

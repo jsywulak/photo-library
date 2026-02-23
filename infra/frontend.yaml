@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Frontend S3 static website
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: Subdomain for the frontend (bucket name must match)
+
+  HostedZoneId:
+    Type: String
+    Description: Route 53 hosted zone ID for the domain
+
+Resources:
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DomainName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${DomainName}/*'
+
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: CNAME
+      TTL: 300
+      ResourceRecords:
+        - !Sub '${DomainName}.s3-website-us-east-1.amazonaws.com'
+
+Outputs:
+  FrontendBucketName:
+    Description: S3 bucket name (use as FRONTEND_BUCKET in .env)
+    Value: !Ref FrontendBucket
+
+  FrontendUrl:
+    Description: Static website URL
+    Value: !Sub 'http://${DomainName}'

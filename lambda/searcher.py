@@ -8,6 +8,13 @@ Each result includes a presigned S3 URL valid for 1 hour for direct image displa
 """
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
+_DEFAULT_TAG_COUNT = 20
+
+
+def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT name FROM tags ORDER BY RANDOM() LIMIT %s", (count,))
+        return [row[0] for row in cur.fetchall()]
 
 
 def search(tags: list[str], db_conn, s3_client=None, bucket: str = None) -> list[dict]:

@@ -118,6 +118,44 @@ def step_ranking(context):
     )
 
 
+@when("the Function URL GET /tags is called with the correct API key")
+def step_get_tags_correct_key(context):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/tags"
+    api_key = os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+
+
+@when("the Function URL GET /tags is called with an incorrect API key")
+def step_get_tags_wrong_key(context):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/tags"
+    req = urllib.request.Request(url, headers={"x-api-key": "wrong-key"}, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
+@then("the response body should be a list of strings")
+def step_response_is_list_of_strings(context):
+    assert isinstance(context.http_body, list), (
+        f"Expected a list, got: {type(context.http_body)}"
+    )
+    assert all(isinstance(t, str) for t in context.http_body), (
+        f"Expected all items to be strings, got: {context.http_body}"
+    )
+
+
+@then("the response should contain at most 20 tags")
+def step_response_at_most_20(context):
+    assert len(context.http_body) <= 20, (
+        f"Expected at most 20 tags, got {len(context.http_body)}"
+    )
+
+
 @when('the Function URL is called with tags "{tags}" and the correct API key')
 def step_function_url_correct_key(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]

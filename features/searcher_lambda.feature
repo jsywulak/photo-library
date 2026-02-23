@@ -33,6 +33,18 @@ Feature: Searcher Lambda
     When the Lambda is invoked with tags "cat"
     Then each result should include a presigned URL
 
+  Scenario: GET /tags returns a list of tag names
+    Given the searcher Lambda is deployed
+    When the Function URL GET /tags is called with the correct API key
+    Then the HTTP response status should be 200
+    And the response body should be a list of strings
+    And the response should contain at most 20 tags
+
+  Scenario: GET /tags rejects requests with a wrong API key
+    Given the searcher Lambda is deployed
+    When the Function URL GET /tags is called with an incorrect API key
+    Then the HTTP response status should be 401
+
   Scenario: Presigned URL for a photo in S3 is accessible
     Given the searcher Lambda is deployed
     And a photo is uploaded to S3 and tagged in the database with "cat"

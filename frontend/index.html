@@ -88,6 +88,28 @@
 
     .chip-input input::placeholder { color: #444; }
 
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      padding: 0 2rem 1.25rem;
+    }
+
+    .suggestion {
+      background: none;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      color: #666;
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      transition: border-color 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+
+    .suggestion:hover { border-color: #444; color: #bbb; }
+    .suggestion.used  { opacity: 0.3; cursor: default; }
+
     .status {
       padding: 3rem 2rem;
       text-align: center;
@@ -170,6 +192,8 @@
     </div>
   </div>
 
+  <div class="suggestions" id="suggestions"></div>
+
   <div id="status" class="status">Add a tag to search.</div>
   <div id="grid" class="grid"></div>
 
@@ -180,11 +204,12 @@
 
   <script src="config.js"></script>
   <script>
-    const chipInput = document.getElementById('chip-input');
-    const tagInput  = document.getElementById('tag-input');
-    const status    = document.getElementById('status');
-    const grid      = document.getElementById('grid');
-    const lightbox  = document.getElementById('lightbox');
+    const chipInput   = document.getElementById('chip-input');
+    const tagInput    = document.getElementById('tag-input');
+    const status      = document.getElementById('status');
+    const grid        = document.getElementById('grid');
+    const suggestions = document.getElementById('suggestions');
+    const lightbox    = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
 
     let tags = [];
@@ -197,12 +222,14 @@
       if (!tag || tags.includes(tag)) return;
       tags.push(tag);
       renderChips();
+      renderSuggestions();
       scheduleSearch();
     }
 
     function removeTag(tag) {
       tags = tags.filter(t => t !== tag);
       renderChips();
+      renderSuggestions();
       scheduleSearch();
     }
 
@@ -238,6 +265,36 @@
       text.split(',').forEach(t => addTag(t));
       tagInput.value = '';
     });
+
+    // ── Suggestions ───────────────────────────────────────────────────────────
+
+    let suggestionTags = [];
+
+    async function loadSuggestions() {
+      try {
+        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + '/tags', {
+          headers: { 'x-api-key': API_KEY },
+        });
+        if (!res.ok) return;
+        suggestionTags = await res.json();
+        renderSuggestions();
+      } catch (_) {}
+    }
+
+    function renderSuggestions() {
+      suggestions.innerHTML = '';
+      suggestionTags.forEach(tag => {
+        const btn = document.createElement('button');
+        btn.className = 'suggestion' + (tags.includes(tag) ? ' used' : '');
+        btn.textContent = tag;
+        btn.addEventListener('click', () => {
+          if (!tags.includes(tag)) addTag(tag);
+        });
+        suggestions.appendChild(btn);
+      });
+    }
+
+    loadSuggestions();
 
     // ── Search ────────────────────────────────────────────────────────────────
 
