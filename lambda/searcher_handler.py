@@ -58,6 +58,10 @@ def lambda_handler(event, context):
     is_function_url = "requestContext" in event
 
     if is_function_url:
+        method = event.get("requestContext", {}).get("http", {}).get("method", "").upper()
+        if method == "OPTIONS":
+            return _http_response(200, {})
+
         headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
         if headers.get("x-api-key") != _API_KEY:
             return _http_response(401, {"error": "Unauthorized"})

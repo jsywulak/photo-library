@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install local-db-start local-db-shell local-db-stop local-migrate neon-migrate test process search db-drop package-processor deploy-processor package-searcher deploy-searcher
+.PHONY: install local-db-start local-db-shell local-db-stop local-migrate neon-migrate test process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags
 
 install:
 	pip install -r requirements.txt
@@ -46,4 +46,7 @@ package-searcher:
 
 deploy-searcher: package-searcher
 	@bash scripts/deploy-searcher.sh
+
+neon-tags:
+	psql "$(NEON_DATABASE_URL)" -c "SELECT name, COUNT(pt.photo_id) AS photo_count FROM tags JOIN photo_tags pt ON pt.tag_id = tags.id GROUP BY name ORDER BY photo_count DESC, name;"
 
