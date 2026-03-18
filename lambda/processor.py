@@ -12,6 +12,7 @@ import base64
 import io
 import json
 import logging
+import os
 
 from PIL import Image
 
@@ -19,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 # Anthropic's base64 image limit is 5 MB.
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+_DEFAULT_MODEL = "claude-opus-4-6"
+
+
+def _get_model() -> str:
+    return os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
 
 
 def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
@@ -65,7 +72,7 @@ def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     response = anthropic_client.messages.create(
-        model="claude-opus-4-6",
+        model=_get_model(),
         max_tokens=2048,
         messages=[{
             "role": "user",
