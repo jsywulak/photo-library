@@ -79,12 +79,16 @@ Resources:
       Principal: "*"
       FunctionUrlAuthType: NONE
 
-  SearcherFunctionInvokePermission:
+  # Required alongside InvokeFunctionUrl — Lambda URL invocations need both.
+  # The InvokedViaFunctionUrl condition restricts this to URL-triggered calls only,
+  # preventing direct lambda:InvokeFunction calls that would bypass the API key check.
+  SearcherFunctionInvokeViaUrlPermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt SearcherFunction.Arn
       Action: lambda:InvokeFunction
       Principal: "*"
+      InvokedViaFunctionUrl: true
 
 Outputs:
   SearcherFunctionName:

@@ -6,7 +6,7 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 mkdir -p dist
 
 echo "Installing dependencies..."
-pip install psycopg2-binary \
+pip install -r requirements-searcher-lambda.txt \
   --target "$BUILD_DIR" \
   --platform manylinux2014_x86_64 \
   --implementation cp \

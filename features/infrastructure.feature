@@ -24,4 +24,9 @@ Feature: Cloud infrastructure
 
   Scenario: Processor Lambda has a concurrency limit set
     Given the processor Lambda is configured
-    Then the reserved concurrency should be 10
+    Then the reserved concurrency should be 3
+
+  Scenario: Searcher Lambda has no unrestricted InvokeFunction permission
+    Given the searcher Lambda is configured
+    Then the Lambda resource policy should not grant unrestricted lambda:InvokeFunction to Principal "*"
+    And the Lambda resource policy should grant lambda:InvokeFunction only via function URL

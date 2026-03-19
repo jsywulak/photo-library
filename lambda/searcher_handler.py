@@ -82,6 +82,8 @@ def lambda_handler(event, context):
             return _http_response(400, {"error": "Invalid JSON body"})
 
         tags = payload.get("tags", [])
+        if not isinstance(tags, list):
+            return _http_response(400, {"error": "tags must be a list"})
     else:
         tags = event.get("tags", [])
 

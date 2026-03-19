@@ -23,6 +23,7 @@ print(f"Found {total} images.")
 conn = psycopg2.connect(os.environ["DATABASE_URL"])
 client = anthropic.Anthropic()
 processed = skipped = 0
+filename = None  # track current file so the except block always has a defined reference
 
 try:
     for i, filename in enumerate(filenames, 1):
@@ -38,16 +39,17 @@ try:
     print(f"\nDone. Processed: {processed}, skipped: {skipped}.")
 except Exception as e:
     conn.rollback()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
-                "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
-                (filename, str(e)),
-            )
-        conn.commit()
-    except Exception:
-        pass  # best-effort; don't mask the original error
+    if filename is not None:
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
+                    "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
+                    (filename, str(e)),
+                )
+            conn.commit()
+        except Exception:
+            pass  # best-effort; don't mask the original error
     raise
 finally:
     conn.close()

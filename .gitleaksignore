@@ -1,0 +1,6 @@
+# Known historical findings — secrets have been rotated, files are now gitignored.
+# Fingerprint format: <commit>:<file>:<rule>:<line>
+
+# API_KEY committed in frontend/config.js before the file was gitignored (2026-02-23).
+# Key was rotated. frontend/config.js is now in .gitignore.
+c4f1eeb4bac1525916f022473cfd2bb064991a00:frontend/config.js:generic-api-key:2

@@ -172,6 +172,23 @@ def step_function_url_correct_key(context, tags):
         context.http_body = json.loads(resp.read())
 
 
+@when("the Function URL is called with a string tags payload and the correct API key")
+def step_function_url_string_tags(context):
+    url = os.environ["SEARCHER_URL"]
+    api_key = os.environ["API_KEY"]
+    body = json.dumps({"tags": "cat"}).encode()  # string instead of list
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": api_key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
 @when('the Function URL is called with tags "{tags}" and an incorrect API key')
 def step_function_url_wrong_key(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]

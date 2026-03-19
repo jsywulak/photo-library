@@ -45,6 +45,11 @@ Feature: Searcher Lambda
     When the Function URL GET /tags is called with an incorrect API key
     Then the HTTP response status should be 401
 
+  Scenario: Function URL rejects a tags payload that is a string instead of a list
+    Given the searcher Lambda is deployed
+    When the Function URL is called with a string tags payload and the correct API key
+    Then the HTTP response status should be 400
+
   Scenario: Presigned URL for a photo in S3 is accessible
     Given the searcher Lambda is deployed
     And a photo is uploaded to S3 and tagged in the database with "cat"

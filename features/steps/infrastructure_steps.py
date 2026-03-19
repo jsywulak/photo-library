@@ -5,6 +5,7 @@ Checks that cloud resources are reachable. Requires:
   - NEON_DATABASE_URL set in .env (standard postgres:// connection string)
 """
 
+import json
 import os
 import socket
 import urllib.request
@@ -85,6 +86,64 @@ def step_bucket_website_enabled(context):
         raise AssertionError(
             f"Bucket {context.frontend_bucket!r} does not have website hosting enabled"
         )
+
+
+@given("the searcher Lambda is configured")
+def step_searcher_lambda_configured(context):
+    name = os.environ.get("SEARCHER_LAMBDA_NAME")
+    assert name, "SEARCHER_LAMBDA_NAME is not set in the environment"
+    context.searcher_lambda_name = name
+
+
+def _get_policy_statements(context):
+    lamb = boto3.client("lambda")
+    try:
+        resp = lamb.get_policy(FunctionName=context.searcher_lambda_name)
+    except lamb.exceptions.ResourceNotFoundException:
+        raise AssertionError(
+            f"No resource policy found on Lambda {context.searcher_lambda_name!r}"
+        )
+    return json.loads(resp["Policy"]).get("Statement", [])
+
+
+@then('the Lambda resource policy should not grant unrestricted lambda:InvokeFunction to Principal "*"')
+def step_no_unrestricted_invoke_function_permission(context):
+    """Check there is no InvokeFunction permission without the InvokedViaFunctionUrl condition.
+
+    An unrestricted lambda:InvokeFunction allows anyone with AWS credentials to call the
+    function directly via the AWS API, bypassing the Function URL and the API key check.
+    The correct permission must include the lambda:InvokedViaFunctionUrl condition.
+    """
+    violations = [
+        stmt.get("Sid", "<no sid>")
+        for stmt in _get_policy_statements(context)
+        if stmt.get("Action") == "lambda:InvokeFunction"
+        and stmt.get("Principal") in ("*", {"AWS": "*"})
+        and "lambda:InvokedViaFunctionUrl" not in stmt.get("Condition", {}).get("Bool", {})
+    ]
+    assert not violations, (
+        f"Lambda {context.searcher_lambda_name!r} has unrestricted InvokeFunction permission(s): "
+        f"{violations} — must include lambda:InvokedViaFunctionUrl condition"
+    )
+
+
+@then("the Lambda resource policy should grant lambda:InvokeFunction only via function URL")
+def step_invoke_function_via_url_permission_exists(context):
+    """Verify the InvokedViaFunctionUrl-scoped InvokeFunction permission is present.
+
+    Lambda Function URL invocations require both lambda:InvokeFunctionUrl (for URL access)
+    and lambda:InvokeFunction with lambda:InvokedViaFunctionUrl: true (for actual execution).
+    """
+    has_url_invoke = any(
+        stmt.get("Action") == "lambda:InvokeFunction"
+        and stmt.get("Principal") in ("*", {"AWS": "*"})
+        and stmt.get("Condition", {}).get("Bool", {}).get("lambda:InvokedViaFunctionUrl") == "true"
+        for stmt in _get_policy_statements(context)
+    )
+    assert has_url_invoke, (
+        f"Lambda {context.searcher_lambda_name!r} is missing lambda:InvokeFunction permission "
+        f"with lambda:InvokedViaFunctionUrl condition — Function URL will return 403"
+    )
 
 
 @then("the website URL should return HTTP 200")

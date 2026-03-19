@@ -3,11 +3,12 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags deploy-frontend help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags deploy-frontend help clean
 
 help:
 	@echo "Local development:"
-	@echo "  make install          Install Python dependencies"
+	@echo "  make install          Install Python dependencies and git hooks"
+	@echo "  make install-hooks    Install git pre-commit hooks (gitleaks secret scanning)"
 	@echo "  make install-playwright  Download Chromium for frontend tests"
 	@echo "  make local-db-start   Start local Postgres container"
 	@echo "  make local-db-stop    Stop local Postgres container"
@@ -30,10 +31,14 @@ help:
 	@echo "  make deploy-searcher  Build and deploy the searcher Lambda"
 	@echo "  make deploy-frontend  Upload frontend to S3"
 
-install:
+install: install-hooks
 	pip install -r requirements.txt
 
+install-hooks:
+	@bash scripts/install-hooks.sh
+
 install-playwright:
+	pip install -r requirements-playwright.txt
 	playwright install chromium
 
 local-db-start:

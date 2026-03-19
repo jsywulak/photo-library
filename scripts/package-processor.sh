@@ -6,7 +6,7 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 mkdir -p dist
 
 echo "Installing dependencies..."
-pip install anthropic Pillow psycopg2-binary \
+pip install -r requirements-processor-lambda.txt \
   --target "$BUILD_DIR" \
   --platform manylinux2014_x86_64 \
   --implementation cp \
