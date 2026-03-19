@@ -54,8 +54,8 @@ def step_tables_exist(context):
 
 @given("a frontend bucket name is configured")
 def step_frontend_bucket_configured(context):
-    bucket = os.environ.get("FRONTEND_BUCKET")
-    assert bucket, "FRONTEND_BUCKET is not set in the environment"
+    bucket = os.environ.get("FRONTEND_DOMAIN")
+    assert bucket, "FRONTEND_DOMAIN is not set in the environment"
     context.frontend_bucket = bucket
 
 

@@ -38,8 +38,14 @@ def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> s
         )
         row = cur.fetchone()
         if row is None:
-            return "skipped"
-        photo_id = row[0]
+            # Row already exists. Skip if successfully processed; retry if previously failed.
+            cur.execute("SELECT id, processed_at FROM photos WHERE s3_key = %s", (s3_key,))
+            existing = cur.fetchone()
+            if existing[1] is not None:
+                return "skipped"
+            photo_id = existing[0]
+        else:
+            photo_id = row[0]
 
         image_bytes = _prepare_image(image_bytes)
         _tag_photo(cur, anthropic_client, photo_id, image_bytes)
@@ -110,7 +116,10 @@ def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None
             f"Failed to parse Anthropic response as JSON: {e}\nRaw response: {text!r}"
         ) from e
 
-    cur.execute("UPDATE photos SET processed_at = NOW() WHERE id = %s", (photo_id,))
+    cur.execute(
+        "UPDATE photos SET processed_at = NOW(), last_error = NULL WHERE id = %s",
+        (photo_id,),
+    )
 
     tags = result.get("tags", [])
     if not isinstance(tags, list):

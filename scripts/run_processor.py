@@ -36,8 +36,18 @@ try:
             print(f"[{i}/{total}] Processed {filename}")
     conn.commit()
     print(f"\nDone. Processed: {processed}, skipped: {skipped}.")
-except Exception:
+except Exception as e:
     conn.rollback()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
+                "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
+                (filename, str(e)),
+            )
+        conn.commit()
+    except Exception:
+        pass  # best-effort; don't mask the original error
     raise
 finally:
     conn.close()

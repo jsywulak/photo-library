@@ -51,8 +51,18 @@ def lambda_handler(event, context):
         conn.commit()
         logger.info("Completed s3://%s/%s: %s", bucket, key, status)
         return {"status": status, "s3_key": key}
-    except Exception:
+    except Exception as e:
         conn.rollback()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
+                    "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
+                    (key, str(e)),
+                )
+            conn.commit()
+        except Exception:
+            pass  # best-effort; don't mask the original error
         raise
     finally:
         conn.close()

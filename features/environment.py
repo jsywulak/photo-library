@@ -11,14 +11,37 @@ def before_all(context):
     context.db_url = os.environ["DATABASE_URL"]
 
 
+def before_feature(context, feature):
+    if "frontend" in feature.tags:
+        from playwright.sync_api import sync_playwright
+        context._playwright = sync_playwright().__enter__()
+        context.browser = context._playwright.chromium.launch()
+
+
+def after_feature(context, feature):
+    if "frontend" in feature.tags:
+        context.browser.close()
+        context._playwright.__exit__(None, None, None)
+
+
 def before_scenario(context, scenario):
     context.temp_dirs = []
+    if "frontend" in scenario.feature.tags:
+        # Default mock data — individual scenarios can override with Given steps.
+        context.mock_tags = []
+        context.mock_results = []
+        context.page = None
+        return
     if "infrastructure" not in scenario.feature.tags:
         context.conn = psycopg2.connect(context.db_url)
         context.conn.autocommit = False
 
 
 def after_scenario(context, scenario):
+    if "frontend" in scenario.feature.tags:
+        if context.page:
+            context.page.close()
+        return
     if hasattr(context, "conn"):
         # Roll back any DB writes made during the scenario so each test starts clean.
         context.conn.rollback()
