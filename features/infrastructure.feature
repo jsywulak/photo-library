@@ -21,3 +21,7 @@ Feature: Cloud infrastructure
   Scenario: Frontend is publicly accessible
     Given a frontend bucket name is configured
     Then the website URL should return HTTP 200
+
+  Scenario: Processor Lambda has a concurrency limit set
+    Given the processor Lambda is configured
+    Then the reserved concurrency should be 10

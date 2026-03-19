@@ -52,6 +52,23 @@ def step_tables_exist(context):
     assert not missing, f"Missing tables: {', '.join(missing)}"
 
 
+@given("the processor Lambda is configured")
+def step_processor_lambda_configured(context):
+    name = os.environ.get("PROCESSOR_LAMBDA_NAME")
+    assert name, "PROCESSOR_LAMBDA_NAME is not set in the environment"
+    context.processor_lambda_name = name
+
+
+@then("the reserved concurrency should be {limit:d}")
+def step_reserved_concurrency(context, limit):
+    lamb = boto3.client("lambda")
+    resp = lamb.get_function_concurrency(FunctionName=context.processor_lambda_name)
+    actual = resp.get("ReservedConcurrentExecutions")
+    assert actual == limit, (
+        f"Expected reserved concurrency {limit}, got {actual!r}"
+    )
+
+
 @given("a frontend bucket name is configured")
 def step_frontend_bucket_configured(context):
     bucket = os.environ.get("FRONTEND_DOMAIN")

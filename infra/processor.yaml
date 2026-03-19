@@ -51,6 +51,9 @@ Resources:
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-photos/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-photos'
 
   ProcessorFunction:
     Type: AWS::Lambda::Function
@@ -61,6 +64,7 @@ Resources:
       Role: !GetAtt ProcessorRole.Arn
       Timeout: 120
       MemorySize: 512
+      ReservedConcurrentExecutions: 10
       Code:
         S3Bucket: !Ref DeploymentBucket
         S3Key: !Ref DeploymentKey

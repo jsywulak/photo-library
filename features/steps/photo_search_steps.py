@@ -32,7 +32,7 @@ def step_seed_photo(context, s3_key, tags):
             cur.execute(
                 """
                 INSERT INTO tags (name) VALUES (%s)
-                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                ON CONFLICT (LOWER(name)) DO UPDATE SET name = EXCLUDED.name
                 RETURNING id
                 """,
                 (tag_name,),

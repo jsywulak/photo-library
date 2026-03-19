@@ -23,9 +23,101 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 _DEFAULT_MODEL = "claude-opus-4-6"
 
+# Preferred tags — the model is instructed to use these when relevant.
+# Add new tags here; they will be included in the prompt automatically.
+_PREFERRED_TAGS = [
+    "aarti", "accessory", "acrylic", "acrylic floor", "ai", "aisle",
+    "aisle decor", "aisle markers", "american wedding", "amisha", "metal trees",
+    "apricot", "arabic", "arch", "arti", "baby shower", "babys breath",
+    "backdrop", "backdrops and beyond", "bakery", "balloons", "balls", "banarsi",
+    "baraat gate", "beaded", "beaded placemat", "behind the scenes", "beige",
+    "bellevue", "bells", "bhandani", "birthday", "black", "blue",
+    "blue lighting", "blush", "boat", "boho", "book club", "boston", "bouquet",
+    "bout", "boutonniere", "boxwood", "brass bells", "brass pots",
+    "bridal entrance", "bridal party", "bridal party flowers",
+    "bridal procession", "bridal shower", "bride groom chairs",
+    "bride's bouquet", "brown", "cake", "california", "candelabra",
+    "candelabra glass", "candelabra gold", "candle", "candle ceremony",
+    "candle stands", "candles", "capiz shell", "card box", "carved", "casino",
+    "centerpiece", "centerpieces", "ceremony", "chaadar", "chairs",
+    "chandelier", "chandni", "chanel", "charger", "charger plates",
+    "chartreuse", "cherry blossom", "chiavari chair", "chicago", "chinese",
+    "christian", "chuppah", "circular", "clear", "clear acrylic chair",
+    "clear chairs", "clusters", "colorful", "column", "columns", "connecticut",
+    "construction", "copper", "corporate", "corsage", "cottage", "couch",
+    "crystal", "crystal tea room", "dance floor", "dance floor seating",
+    "dance floor wrap", "dark brown", "dark moody", "deity", "delaware",
+    "designer bouquet", "dessert station", "diamond dance floor", "dj",
+    "dj booth", "dj table", "dome", "draping", "drum", "drums", "dusty pink",
+    "dusty rose", "edgy", "elegant", "elephant", "elevated", "estate",
+    "event props", "event signage", "fabrication", "facade", "fall", "fans",
+    "favor cart", "favors", "fire pit", "floor cover", "floral",
+    "floral garlands", "floral print", "florist", "focal", "focus light",
+    "food", "food canopy", "food station", "forsythia", "french",
+    "fresh floral garland", "fresh flowers", "fuzzy centerpiece", "ganesh",
+    "ganesh puja", "garden", "garlands", "gemstone", "geometric", "gift box",
+    "glass", "glossy", "gold", "gold beaded", "gold mirrored cart",
+    "gold tables", "green", "greenery aisle", "greens", "grey", "gyp", "haldi",
+    "hanging ganesh", "henna", "henna artist", "heritage",
+    "hilton penns landing", "hindu", "hot pink", "impact", "indian american",
+    "indianapolis", "indoor", "influencer", "inspiration", "intimate event",
+    "iraq", "iraqui", "ivory", "jago", "jaimala", "jasmine", "jersey city",
+    "jewelry", "jewish", "la rue", "lamiya", "lamp", "landsdowne", "lantern",
+    "lavender", "lavender roses", "liberty house", "library", "lighting",
+    "lightyear studio", "lime green", "logan", "lotti", "lotus", "lounge",
+    "lounge canopy", "loveseat", "low centerpiece", "low seats",
+    "madison avenue", "makeup artist", "mandap", "mandap furniture", "mansion",
+    "marigold", "market", "maryam", "masquerade", "matte runner", "mayun",
+    "mehndi", "mexican", "middle eastern", "mirrored", "mirrored table",
+    "modern bouquet", "moroccan", "morocco", "movie set", "mumbai", "muslim",
+    "neon", "neon yellow", "neutral draping", "new jersey", "new york",
+    "nigerian", "notary", "orange", "organic", "ottoman", "outdoor",
+    "outdoor ceremony", "outdoor install", "outdoor mandap", "pakistani",
+    "palki", "pandit", "parents chairs", "parina", "patisserie", "peach",
+    "peacock", "pedestals", "petal", "photo op", "photo prop", "photo shoot",
+    "photos", "pillar candles", "pink", "pipe and drape", "pistachio", "plant",
+    "planters", "pleated", "polka dot", "polyester", "pom pom", "pop up",
+    "priest", "print", "procession", "production", "puff", "punjabi", "purple",
+    "purple lighting", "reception", "red", "red chairs", "religious",
+    "religious statue", "rental", "rental site", "rentals", "retail shop",
+    "retro", "roses", "royal blue", "rug", "runner", "saloon", "sangeet",
+    "sangeet furniture", "satin blue", "seating", "sette", "setup team",
+    "sheetal", "shital", "shop", "side tables", "sign", "signage",
+    "silk dupioni", "silk runner", "smilex", "sofa", "south american",
+    "south asian ceremony", "speakeasy", "square", "stage", "stage cover",
+    "stage fabric", "stairs", "stand", "station", "statue", "statues", "steel",
+    "striped", "structure", "sweet sixteen", "swing", "tabla", "table linen",
+    "tall centerpiece", "tapered", "tea party", "teal blue", "team",
+    "team setup", "texture", "traditional", "trees", "tropical", "truck",
+    "truck prop", "tufted", "tulsi", "tum hi ho", "turkish", "turmeric",
+    "turquoise", "umbrella", "ushma", "vaishali", "velvet", "vintage",
+    "virginia", "walima", "wall divider", "wedding", "wedding aisle", "welcome",
+    "welcome entrance", "welcome table", "western", "white", "white chair",
+    "white elephant", "white floor", "white wooden cart", "wood", "yellow",
+]
+
 
 def _get_model() -> str:
     return os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
+
+
+def _build_prompt() -> str:
+    preferred = ", ".join(_PREFERRED_TAGS)
+    return (
+        "Analyze this photo. Focus on the aesthetic elements and visual design "
+        "of the room, especially the florals and the colors. Ignore any people "
+        "in the photos. Ignore any technical aspects of the photography itself. "
+        "If you recognize any specifically Indian ceremonial items, please call "
+        "those out.\n\n"
+        "When choosing tags, prefer terms from the list below whenever they are "
+        "relevant — use the exact spelling shown. You may add tags not on the "
+        "list if they describe something important that the list doesn't cover.\n\n"
+        f"Preferred tags: {preferred}\n\n"
+        "Respond with a JSON object containing:\n"
+        '  "summary": a one-sentence description\n'
+        '  "tags": a list of 20-30 tags\n'
+        "Respond with JSON only, no other text."
+    )
 
 
 def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
@@ -93,12 +185,7 @@ def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None
                 },
                 {
                     "type": "text",
-                    "text": (
-                        "Analyze this photo. Focus on the aesthetic elements and visual design of the room, especially the florals and the colors. Ignore any people in the photos. Ignore any technical aspects of the photography itself. If you recognize any specifically Indian ceremonianal items, please call those out. Respond with a JSON object containing:\n"
-                        '  "summary": a one-sentence description\n'
-                        '  "tags": a list of 20-30 descriptive single words (ideal) or short phases (less preferred)\n'
-                        "Respond with JSON only, no other text."
-                    ),
+                    "text": _build_prompt(),
                 },
             ],
         }],
@@ -132,7 +219,7 @@ def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None
         cur.execute(
             """
             INSERT INTO tags (name) VALUES (%s)
-            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+            ON CONFLICT (LOWER(name)) DO UPDATE SET name = EXCLUDED.name
             RETURNING id
             """,
             (tag_name.lower().strip(),),

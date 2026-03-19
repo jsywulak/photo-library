@@ -57,7 +57,7 @@ def step_key_in_db(context, key):
     db_key = context.key_map.get(key, key)
     with context.conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO photos (s3_key) VALUES (%s) ON CONFLICT DO NOTHING",
+            "INSERT INTO photos (s3_key, processed_at) VALUES (%s, NOW()) ON CONFLICT DO NOTHING",
             (db_key,),
         )
 

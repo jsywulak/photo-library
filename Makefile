@@ -50,7 +50,7 @@ neon-migrate:
 	python db/migrate.py "$(NEON_DATABASE_URL)"
 
 test:
-	behave --tags ~@frontend
+	behave --tags "not @frontend"
 
 test-unit:
 	python -m unittest discover tests/
