@@ -52,6 +52,16 @@ def step_local_photos(context, photos):
     context.location = tmp
 
 
+@given('a local directory with an unsupported file "{filename}"')
+def step_unsupported_file(context, filename):
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    (Path(tmp) / (prefix + filename)).write_bytes(b"not a jpeg")
+    context.location = tmp
+
+
 @given('"{key}" is already in the database')
 def step_key_in_db(context, key):
     db_key = context.key_map.get(key, key)
@@ -77,7 +87,7 @@ def step_run(context):
     for filename in filenames:
         image_bytes = (Path(context.location) / filename).read_bytes()
         status = processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic())
-        if status == "skipped":
+        if status == "skipped" or status == "unsupported":
             skipped += 1
         else:
             processed += 1
@@ -97,6 +107,7 @@ def step_discovered(context, count):
 
 
 @then("{count:d} photo should be processed")
+@then("{count:d} photos should be processed")
 def step_processed(context, count):
     assert context.result["processed"] == count, (
         f"Expected {count} processed, got {context.result['processed']}"
@@ -116,6 +127,14 @@ def step_photo_saved(context, key):
     with context.conn.cursor() as cur:
         cur.execute("SELECT id FROM photos WHERE s3_key = %s", (db_key,))
         assert cur.fetchone(), f"{db_key!r} not found in photos table"
+
+
+@then('"{key}" should not be saved to the database')
+def step_photo_not_saved(context, key):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT id FROM photos WHERE s3_key = %s", (db_key,))
+        assert cur.fetchone() is None, f"{db_key!r} should not be in photos table but was found"
 
 
 @then('"{key}" should have tags in the database')

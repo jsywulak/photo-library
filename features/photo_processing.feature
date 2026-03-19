@@ -23,3 +23,9 @@ Feature: Photo processing pipeline
     Given a local directory with photos "photo1.jpg"
     When the processor runs
     Then "photo1.jpg" should have tags in the database
+
+  Scenario: Non-JPEG files are skipped and not saved to the database
+    Given a local directory with an unsupported file "photo.nef"
+    When the processor runs
+    Then 0 photos should be processed
+    And "photo.nef" should not be saved to the database

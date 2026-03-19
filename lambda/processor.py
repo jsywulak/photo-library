@@ -121,7 +121,11 @@ def _build_prompt() -> str:
 
 
 def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
-    """Process a single image. Returns 'processed' or 'skipped'."""
+    """Process a single image. Returns 'processed', 'skipped', or 'unsupported'."""
+    if not s3_key.lower().endswith((".jpg", ".jpeg")):
+        logger.info("Skipping unsupported file type: %s", s3_key)
+        return "unsupported"
+
     with db_conn.cursor() as cur:
         # Atomically claim the row. ON CONFLICT means it's already processed.
         cur.execute(

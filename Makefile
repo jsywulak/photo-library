@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags deploy-frontend help clean
+.PHONY: install install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags deploy-frontend help clean
 
 help:
 	@echo "Local development:"
@@ -24,6 +24,7 @@ help:
 	@echo "AWS deployment:"
 	@echo "  make neon-migrate     Apply pending migrations to Neon"
 	@echo "  make neon-tags        Show tag counts from Neon"
+	@echo "  make neon-clean-tags  Remove tags with no associated photos"
 	@echo "  make deploy-processor Build and deploy the processor Lambda"
 	@echo "  make deploy-searcher  Build and deploy the searcher Lambda"
 	@echo "  make deploy-frontend  Upload frontend to S3"
@@ -84,6 +85,9 @@ deploy-frontend:
 
 neon-tags:
 	psql "$(NEON_DATABASE_URL)" -c 'SELECT name, COUNT(pt.photo_id) AS photo_count FROM tags JOIN photo_tags pt ON pt.tag_id = tags.id GROUP BY name ORDER BY photo_count DESC, name;'
+
+neon-clean-tags:
+	psql "$(NEON_DATABASE_URL)" -c 'DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags);'
 
 clean:
 	rm -rf dist/ lambda/__pycache__ db/__pycache__ scripts/__pycache__ features/__pycache__
