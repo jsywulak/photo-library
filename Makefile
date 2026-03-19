@@ -25,6 +25,7 @@ help:
 	@echo "  make neon-migrate     Apply pending migrations to Neon"
 	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-clean-tags  Remove tags with no associated photos"
+	@echo "  make neon-stats       Show photo/tag counts and top 5 tags"
 	@echo "  make deploy-processor Build and deploy the processor Lambda"
 	@echo "  make deploy-searcher  Build and deploy the searcher Lambda"
 	@echo "  make deploy-frontend  Upload frontend to S3"
@@ -88,6 +89,9 @@ neon-tags:
 
 neon-clean-tags:
 	psql "$(NEON_DATABASE_URL)" -c 'DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags);'
+
+neon-stats:
+	psql "$(NEON_DATABASE_URL)" -c 'SELECT (SELECT COUNT(*) FROM photos) AS photos, (SELECT COUNT(*) FROM tags) AS tags;' -c 'SELECT name, COUNT(pt.photo_id) AS photo_count FROM tags JOIN photo_tags pt ON pt.tag_id = tags.id GROUP BY name ORDER BY photo_count DESC, name LIMIT 5;'
 
 clean:
 	rm -rf dist/ lambda/__pycache__ db/__pycache__ scripts/__pycache__ features/__pycache__

@@ -60,6 +60,7 @@ def after_scenario(context, scenario):
             conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM photos WHERE s3_key = %s", (context.test_s3_key,))
+                cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
             conn.commit()
             conn.close()
         except Exception:
@@ -81,6 +82,7 @@ def after_scenario(context, scenario):
                     "DELETE FROM photos WHERE s3_key = ANY(%s)",
                     (context.neon_test_s3_keys,),
                 )
+                cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
             conn.commit()
             conn.close()
         except Exception:
