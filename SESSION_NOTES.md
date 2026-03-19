@@ -97,10 +97,76 @@ Resets 4pm (America/New_York)
 
 (I did come close to hitting the session limit before I ran out -- debugging the invoke function stuff was token-expensive.)
 
-Current session                                                                  
-███                                                6% used                                                                                                                                     
-Resets 1am (America/New_York)                                                                                                                                                                  
+Current session
+███                                                6% used
+Resets 1am (America/New_York)
 
 Current week (all models)
 █████▌                                             11% used
 Resets Mar 1 at 4pm (America/New_York)
+
+---
+
+## Session 3 — Code quality, security, processor improvements, and test coverage
+
+### Code quality & setup
+- Pinned all dependency versions in `requirements.txt`
+- Moved hardcoded `claude-opus-4-6` model to an `ANTHROPIC_MODEL` env var with a sensible default
+- Created `.env.example` documenting all required variables (local and AWS)
+- Added `make help`, `make clean`, `make test-unit`, `make test-frontend`, `make install-playwright` targets
+- Fixed `make neon-migrate` and `make neon-tags` — the `&` in the Neon URL was being interpreted as a shell background operator; fixed by quoting
+
+### Security
+- Audited git history for secrets — found `frontend/config.js` (containing the API key) was tracked
+- Removed it from git tracking with `git rm --cached` and added it to `.gitignore`
+- Rotated the exposed API key
+
+### Database migrations
+- `002_tag_case_constraint.sql` — replaced the column-level `UNIQUE` constraint on `tags.name` with an expression index on `LOWER(name)` for true case-insensitive uniqueness
+- `003_photo_error_tracking.sql` — added `last_error TEXT` column to `photos` so failed processing attempts are recorded
+- Fixed all `ON CONFLICT (name)` references across the codebase to `ON CONFLICT (LOWER(name))` after the migration broke them (processor.py, photo_search_steps.py, photo_processing_steps.py, searcher_lambda_steps.py)
+
+### Error tracking
+- Updated `lambda/handler.py` and `scripts/run_processor.py` to record errors to `last_error` after a rollback, using a fresh transaction so the error survives even when the main transaction fails
+
+### Processor improvements
+- Added a large curated `_PREFERRED_TAGS` list (~280 tags) to the prompt so the model uses consistent terminology
+- Built `_build_prompt()` to construct the full prompt dynamically from that list
+- Added retry logic: photos with a `NULL` processed_at are retried rather than skipped
+- Added NEF/non-JPEG rejection — `process_one()` now returns `"unsupported"` for anything that isn't `.jpg`/`.jpeg`
+
+### Unit tests
+- Added `tests/test_processor.py` with 4 unit tests for `_prepare_image`: passthrough under limit, resize when over limit, corrupt image handling, image too small to resize
+
+### Frontend BDD tests
+- Added `features/frontend.feature` with 11 scenarios covering: initial state, tag suggestions, chip add/remove via click and keyboard, search results grid, empty results message, lightbox open/close (× button, Escape, backdrop click)
+- Added `features/steps/frontend_steps.py` using Playwright with Lambda URL mocking via `page.route()`
+- Updated `features/environment.py` with browser lifecycle management for `@frontend` scenarios
+
+### Infrastructure
+- Fixed IAM policy in `infra/processor.yaml` to include `s3:ListBucket` (was causing AccessDenied errors in CloudWatch)
+- Added `ReservedConcurrentExecutions: 10` to the processor Lambda to prevent runaway API costs
+- Added a BDD scenario to `features/infrastructure.feature` validating the concurrency limit is in place
+
+### NEF file cleanup
+- Queried Neon for all non-JPEG files in the database and deleted them
+- Added a BDD scenario for NEF rejection before implementing the feature (TDD)
+- Deployed the fix
+
+### Database utilities
+- Added `make neon-clean-tags` to delete orphaned tags from Neon
+- Added `make neon-stats` to show photo/tag counts and top 5 tags
+- Fixed `after_scenario` in `environment.py` to clean up orphaned tags after infrastructure test teardowns, so test runs no longer pollute the live site
+
+### Decisions made
+- TDD workflow for NEF rejection: wrote failing BDD test first, then implemented
+- `ReservedConcurrentExecutions: 10` chosen to rate-limit Lambda invocations without blocking local processing scripts
+- Orphaned tag cleanup runs in the same transaction as photo deletion during teardown — atomic and safe
+
+  Current session                                                                                                                                                                                
+  ██████████████▌                                    29% used                                                           
+  Resets 11pm (America/New_York)                                                                                                                                                                 
+                                                                                                                                                                                                 
+  Current week (all models)                                                                                                                                                                      
+  ██                                                 4% used
+  Resets Mar 25 at 6pm (America/New_York)
