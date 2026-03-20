@@ -13,7 +13,7 @@ A photo tagging and search system. Photos are analysed by Claude's vision API to
 ## Schema
 
 ```
-photos     (id, s3_key, processed_at)
+photos     (id, s3_key, processed_at, last_error)
 tags       (id, name)
 photo_tags (photo_id, tag_id)
 ```
@@ -29,23 +29,13 @@ photo_tags (photo_id, tag_id)
 ### Setup
 
 ```bash
-cp .env.example .env      # fill in ANTHROPIC_API_KEY
-make install              # install Python dependencies
-make db-start             # start local Postgres container
-make migrate              # apply schema migrations
+cp .env.example .env      # fill in ANTHROPIC_API_KEY and other values
+make install              # install Python dependencies and git hooks
+make local-db-start       # start local Postgres container
+make local-migrate        # apply schema migrations
 ```
 
-**.env values:**
-
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=phototagger
-DB_USER=postgres
-DB_PASSWORD=localdev
-DATABASE_URL=postgresql://postgres:localdev@localhost:5432/phototagger
-ANTHROPIC_API_KEY=sk-ant-...
-```
+See `.env.example` for all available configuration variables.
 
 ### Processing photos
 
@@ -67,17 +57,19 @@ make search
 ### Database
 
 ```bash
-make db-shell             # open a psql session
-make db-drop              # drop all tables (prompts for confirmation)
+make local-db-shell       # open a psql session
+make local-db-drop        # drop all tables (prompts for confirmation)
 ```
 
 ### Running tests
 
-Tests require a running local Postgres instance with migrations applied, and a valid `ANTHROPIC_API_KEY` — they call the real API.
-
 ```bash
-make test
+make test-unit            # unit tests only — no external dependencies
+make test                 # BDD tests — requires local Postgres, Anthropic API key, and live AWS/Neon credentials
+make test-frontend        # frontend browser tests — requires make install-playwright first
 ```
+
+`make test` runs the full BDD suite including `@infrastructure` scenarios that invoke deployed AWS Lambdas and query Neon. Make sure your `.env` has `NEON_DATABASE_URL`, `SEARCHER_LAMBDA_NAME`, `PROCESSOR_LAMBDA_NAME`, and `S3_BUCKET` set.
 
 ## Useful SQL
 
