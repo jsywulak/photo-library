@@ -17,14 +17,11 @@ import uuid
 from pathlib import Path
 
 import boto3
-import psycopg2
 from behave import given, then, when
 
+from common import neon_conn
+
 IMAGES_DIR = Path(__file__).parents[2] / "images"
-
-
-def _neon_conn():
-    return psycopg2.connect(os.environ["NEON_DATABASE_URL"])
 
 
 @given("the processor Lambda is deployed")
@@ -82,7 +79,7 @@ def step_function_active(context):
 
 @then("the photo should be stored in the Neon database")
 def step_photo_in_db(context):
-    conn = _neon_conn()
+    conn = neon_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM photos WHERE s3_key = %s", (context.test_s3_key,))
@@ -95,7 +92,7 @@ def step_photo_in_db(context):
 
 @then("the photo should have tags in the Neon database")
 def step_photo_has_tags(context):
-    conn = _neon_conn()
+    conn = neon_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(

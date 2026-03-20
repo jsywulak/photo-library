@@ -14,39 +14,10 @@ import os
 import uuid
 
 import boto3
-import psycopg2
 import urllib.request
 from behave import given, then, when
 
-
-def _neon_conn():
-    return psycopg2.connect(os.environ["NEON_DATABASE_URL"])
-
-
-def _seed_photo(conn, s3_key, tags):
-    """Insert a photo and its tags into Neon. Returns the photo id."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO photos (s3_key, processed_at) VALUES (%s, NOW()) RETURNING id",
-            (s3_key,),
-        )
-        photo_id = cur.fetchone()[0]
-        for tag_name in tags:
-            cur.execute(
-                """
-                INSERT INTO tags (name) VALUES (%s)
-                ON CONFLICT (LOWER(name)) DO UPDATE SET name = EXCLUDED.name
-                RETURNING id
-                """,
-                (tag_name.strip().lower(),),
-            )
-            tag_id = cur.fetchone()[0]
-            cur.execute(
-                "INSERT INTO photo_tags (photo_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (photo_id, tag_id),
-            )
-    conn.commit()
-    return photo_id
+from common import neon_conn, seed_photo
 
 
 @given("the searcher Lambda is deployed")
@@ -67,8 +38,9 @@ def step_seed_photo(context, tags):
     s3_key = f"{prefix}photo.jpg"
     tag_list = [t.strip() for t in tags.split(",")]
 
-    conn = _neon_conn()
-    _seed_photo(conn, s3_key, tag_list)
+    conn = neon_conn()
+    seed_photo(conn, s3_key, tag_list)
+    conn.commit()
     conn.close()
 
     context.neon_test_s3_keys.append(s3_key)
@@ -250,8 +222,9 @@ def step_upload_to_s3_and_seed(context, tags):
     context.searcher_s3_uploads.append((bucket, s3_key))
 
     tag_list = [t.strip() for t in tags.split(",")]
-    conn = _neon_conn()
-    _seed_photo(conn, s3_key, tag_list)
+    conn = neon_conn()
+    seed_photo(conn, s3_key, tag_list)
+    conn.commit()
     conn.close()
 
     context.neon_test_s3_keys.append(s3_key)

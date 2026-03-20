@@ -13,6 +13,7 @@ load_dotenv(Path(__file__).parents[1] / ".env")
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "lambda"))
 import processor
+from processor import record_error
 
 location = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parents[1] / "images"
 filenames = [f for f in os.listdir(location) if not f.startswith(".")]
@@ -40,16 +41,7 @@ try:
 except Exception as e:
     conn.rollback()
     if filename is not None:
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
-                    "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
-                    (filename, str(e)),
-                )
-            conn.commit()
-        except Exception:
-            pass  # best-effort; don't mask the original error
+        record_error(conn, filename, e)
     raise
 finally:
     conn.close()

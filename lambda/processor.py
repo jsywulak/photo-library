@@ -120,6 +120,24 @@ def _build_prompt() -> str:
     )
 
 
+def record_error(conn, s3_key: str, error: Exception) -> None:
+    """Best-effort write of a processing error to photos.last_error.
+
+    Never raises — callers use this inside an except block and must not have
+    the original exception masked by a secondary failure.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
+                "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
+                (s3_key, str(error)),
+            )
+        conn.commit()
+    except Exception:
+        pass
+
+
 def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
     """Process a single image. Returns 'processed', 'skipped', or 'unsupported'."""
     if not s3_key.lower().endswith((".jpg", ".jpeg")):

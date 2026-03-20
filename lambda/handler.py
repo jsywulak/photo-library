@@ -14,7 +14,7 @@ import anthropic
 import boto3
 import psycopg2
 
-from processor import process_one
+from processor import process_one, record_error
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -53,16 +53,7 @@ def lambda_handler(event, context):
         return {"status": status, "s3_key": key}
     except Exception as e:
         conn.rollback()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
-                    "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
-                    (key, str(e)),
-                )
-            conn.commit()
-        except Exception:
-            pass  # best-effort; don't mask the original error
+        record_error(conn, key, e)
         raise
     finally:
         conn.close()
