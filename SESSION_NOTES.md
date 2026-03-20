@@ -167,6 +167,64 @@ Resets Mar 1 at 4pm (America/New_York)
   ██████████████▌                                    29% used                                                           
   Resets 11pm (America/New_York)                                                                                                                                                                 
                                                                                                                                                                                                  
-  Current week (all models)                                                                                                                                                                      
+  Current week (all models)
   ██                                                 4% used
+  Resets Mar 25 at 6pm (America/New_York)
+
+---
+
+## Session 4 — Tech debt, security hardening, and data integrity tooling
+
+### Security
+- **Removed insecure Lambda permission** — `infra/searcher.yaml` had `lambda:InvokeFunction` with `Principal: "*"` (no conditions), allowing anyone to invoke the function directly, bypassing the API key. Replaced with the correct two-permission pattern for `AuthType: NONE` Function URLs: `lambda:InvokeFunctionUrl` + `lambda:InvokeFunction` with `lambda:InvokedViaFunctionUrl: true` condition.
+- Went through a CloudFormation ghost resource cycle (CFN thought the old permission existed but it didn't) — had to remove, deploy, re-add, deploy.
+- **Gitleaks secret scanning** — installed as a pre-commit hook via `scripts/install-hooks.sh`. One historical finding (already-rotated API key) acknowledged in `.gitleaksignore`.
+
+### Bug fixes
+- **`_prepare_image` base64 threshold** — the resize check compared raw file size against 5 MB, but Anthropic's limit applies to the base64-encoded size (~33% larger). Images in the 3.75–5 MB raw range passed the check but failed at the API. Fixed by lowering `MAX_IMAGE_BYTES` to `5 MB × 3/4 ≈ 3.75 MB`. Wrote a failing BDD test first using a JPEG padded to exactly 4.5 MB via JPEG comment blocks (FF FE markers) — producing the exact same API error as the 107 production failures. Applied fix, confirmed green.
+- **Unbound `filename` in `run_processor.py`** — if the processor threw before the loop started, `record_error` would reference an undefined variable. Fixed with a `filename = None` sentinel and guard.
+- **Lambda Function URL 403s** (carried over from earlier) — confirmed root cause and fixed in CFN template.
+
+### Input validation
+- Added `isinstance(tags, list)` check in `searcher_handler.py` — returns 400 if a string is passed instead of a list.
+
+### Code quality
+- **Extracted `_neon_conn()`** into `features/steps/common.py` — was duplicated across multiple step files.
+- **Extracted `_seed_photo()`** into `common.py` — SQL for seeding test photos was duplicated across three step files.
+- **Extracted `record_error()`** into `lambda/processor.py` — the error-recording pattern was duplicated between `handler.py` and `run_processor.py`.
+
+### Dependencies
+- Split requirements into purpose-specific files: `requirements.txt`, `requirements-playwright.txt`, `requirements-processor-lambda.txt`, `requirements-searcher-lambda.txt`, `requirements-lock.txt`.
+- Updated `package-processor.sh` and `package-searcher.sh` to use pinned Lambda-specific files so zips don't bundle unnecessary packages.
+
+### BDD test additions
+- **Infrastructure** — new scenario validating the live Lambda resource policy (no unrestricted `InvokeFunction`, correct Function URL condition). Concurrency limit scenario updated from 10 → 3.
+- **String tags validation** — scenario for the 400 response when `tags` is a string.
+- **Large image resize** — scenario using a JPEG padded to 4.5 MB via JPEG comment blocks to reproduce the exact production base64 failure.
+
+### Documentation
+- **README** — fixed stale make targets, removed stale `.env` block, added `last_error` to schema, clarified test requirements.
+
+### Data integrity tooling
+Four new `make` targets for ongoing DB/S3 health checks:
+
+- **`neon-sync-check`** — compares S3 listing vs DB; reports files in S3 not in DB and DB records not in S3, with a status breakdown (processed/errored/stuck).
+- **`neon-errors`** — lists all photos with `last_error` set.
+- **`neon-no-tags`** — lists processed photos with no tag associations (silent failures).
+- **`neon-reprocess-errors`** — queries all errored photos and re-invokes the processor Lambda asynchronously for each one.
+- **`neon-clean-orphans`** — deletes DB records with no matching S3 object. Includes a safety floor (aborts if S3 returns fewer than 1,000 images, suggesting an incomplete listing).
+
+### Production cleanup
+- Ran `neon-errors`: found 107 errors — all base64 size failures (the `_prepare_image` bug).
+- Deployed the fix, ran `neon-reprocess-errors`, confirmed all 107 cleared.
+- Ran `neon-sync-check`: found 17 orphaned `Mehndi/` DB records (processed with subdirectory path as `s3_key`, files since removed from S3). Ran `neon-clean-orphans` to delete them, then `neon-clean-tags` to remove 2 orphaned tags.
+- Final state: **1,278 photos, all processed OK, fully consistent with S3**.
+
+
+  Current session                                                                                                                                                                              
+  ████████████████████                               40% used                                                           
+  Resets 11pm (America/New_York)                                                              
+                                                                                                                                                                                                 
+  Current week (all models)                                                                                                                                                                      
+  ████                                               8% used
   Resets Mar 25 at 6pm (America/New_York)
