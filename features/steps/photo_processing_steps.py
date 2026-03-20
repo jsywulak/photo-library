@@ -52,6 +52,57 @@ def step_local_photos(context, photos):
     context.location = tmp
 
 
+@given('a local directory with an oversized image "{filename}"')
+def step_oversized_image(context, filename):
+    """Create a JPEG padded to 4.5 MB — above the base64 threshold but below 5 MB raw.
+
+    Images in the 3.75–5 MB raw range slip past the old >5 MB resize check, but
+    their base64 encoding (~6 MB) exceeds Anthropic's 5 MB limit.  We pad a tiny
+    real JPEG to exactly 4.5 MB by inserting JPEG comment blocks (FF FE) before
+    the end-of-image marker.  Comment blocks are ignored by image decoders, so
+    the file is a valid JPEG that Anthropic can process after resizing.
+    """
+    import io
+    import struct
+    from PIL import Image
+
+    TARGET_SIZE = int(4.5 * 1024 * 1024)  # 4.5 MB — between 3.75 MB and 5 MB
+
+    # Build a small but valid base JPEG
+    img = Image.new("RGB", (100, 100), color=(100, 149, 237))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    base_jpeg = buf.getvalue()
+    assert base_jpeg[-2:] == b"\xff\xd9", "Unexpected JPEG structure"
+
+    # Insert COM blocks (FF FE) before the EOI marker to reach TARGET_SIZE.
+    # Each block: 2-byte marker + 2-byte length (includes itself) + data.
+    body = bytearray(base_jpeg[:-2])  # everything except EOI
+    remaining = TARGET_SIZE - len(base_jpeg)  # bytes still needed
+    MAX_COM_DATA = 65533  # max data bytes per COM block (length field max 65535)
+    while remaining > 0:
+        data_size = min(remaining - 4, MAX_COM_DATA)
+        if data_size <= 0:
+            break
+        body += b"\xff\xfe"
+        body += struct.pack(">H", data_size + 2)
+        body += b"\x00" * data_size
+        remaining -= 4 + data_size
+    body += b"\xff\xd9"  # EOI
+    image_bytes = bytes(body)
+
+    assert len(image_bytes) >= TARGET_SIZE, (
+        f"Padded JPEG too small: {len(image_bytes)} bytes"
+    )
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    (Path(tmp) / (prefix + filename)).write_bytes(image_bytes)
+    context.location = tmp
+
+
 @given('a local directory with an unsupported file "{filename}"')
 def step_unsupported_file(context, filename):
     prefix = f"test-{uuid.uuid4().hex[:8]}-"

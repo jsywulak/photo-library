@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags deploy-frontend help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags neon-sync-check neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend help clean
 
 help:
 	@echo "Local development:"
@@ -27,6 +27,11 @@ help:
 	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-clean-tags  Remove tags with no associated photos"
 	@echo "  make neon-stats       Show photo/tag counts and top 5 tags"
+	@echo "  make neon-sync-check  Compare S3 listing vs DB (find unprocessed/orphaned)"
+	@echo "  make neon-errors      List photos with processing errors"
+	@echo "  make neon-no-tags     List processed photos with no tags (silent failures)"
+	@echo "  make neon-reprocess-errors  Re-invoke processor Lambda for all errored photos"
+	@echo "  make neon-clean-orphans     Delete DB records with no matching S3 object"
 	@echo "  make deploy-processor Build and deploy the processor Lambda"
 	@echo "  make deploy-searcher  Build and deploy the searcher Lambda"
 	@echo "  make deploy-frontend  Upload frontend to S3"
@@ -97,6 +102,21 @@ neon-clean-tags:
 
 neon-stats:
 	psql "$(NEON_DATABASE_URL)" -c 'SELECT (SELECT COUNT(*) FROM photos) AS photos, (SELECT COUNT(*) FROM tags) AS tags;' -c 'SELECT name, COUNT(pt.photo_id) AS photo_count FROM tags JOIN photo_tags pt ON pt.tag_id = tags.id GROUP BY name ORDER BY photo_count DESC, name LIMIT 5;'
+
+neon-sync-check:
+	python scripts/sync_check.py
+
+neon-errors:
+	psql "$(NEON_DATABASE_URL)" -c 'SELECT s3_key, last_error FROM photos WHERE last_error IS NOT NULL ORDER BY s3_key;'
+
+neon-no-tags:
+	psql "$(NEON_DATABASE_URL)" -c 'SELECT p.s3_key, p.processed_at FROM photos p WHERE p.processed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM photo_tags pt WHERE pt.photo_id = p.id) ORDER BY p.processed_at;'
+
+neon-reprocess-errors:
+	python scripts/reprocess_errors.py
+
+neon-clean-orphans:
+	python scripts/clean_orphans.py
 
 clean:
 	rm -rf dist/ lambda/__pycache__ db/__pycache__ scripts/__pycache__ features/__pycache__

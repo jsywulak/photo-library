@@ -29,3 +29,9 @@ Feature: Photo processing pipeline
     When the processor runs
     Then 0 photos should be processed
     And "photo.nef" should not be saved to the database
+
+  Scenario: Images larger than the base64 limit are resized and tagged successfully
+    Given a local directory with an oversized image "large_photo.jpg"
+    When the processor runs
+    Then 1 photo should be processed
+    And "large_photo.jpg" should have tags in the database

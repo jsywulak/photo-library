@@ -18,8 +18,9 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Anthropic's base64 image limit is 5 MB.
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+# Anthropic's 5 MB limit applies to the base64-encoded image, not raw bytes.
+# Base64 inflates size by ~33%, so the safe raw ceiling is 5 MB * 3/4 = 3.75 MB.
+MAX_IMAGE_BYTES = int(5 * 1024 * 1024 * 3 / 4)  # 3,932,160 bytes
 
 _DEFAULT_MODEL = "claude-opus-4-6"
 

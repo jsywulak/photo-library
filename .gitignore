@@ -8,3 +8,4 @@ venv/
 images/
 dist/
 frontend/config.js
+TODO.md
