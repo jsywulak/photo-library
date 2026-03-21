@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Base64 inflates size by ~33%, so the safe raw ceiling is 5 MB * 3/4 = 3.75 MB.
 MAX_IMAGE_BYTES = int(5 * 1024 * 1024 * 3 / 4)  # 3,932,160 bytes
 
-_DEFAULT_MODEL = "claude-opus-4-6"
+_DEFAULT_MODEL = "claude-sonnet-4-6"
 
 # Preferred tags — the model is instructed to use these when relevant.
 # Add new tags here; they will be included in the prompt automatically.
@@ -116,7 +116,7 @@ def _build_prompt() -> str:
         f"Preferred tags: {preferred}\n\n"
         "Respond with a JSON object containing:\n"
         '  "summary": a one-sentence description\n'
-        '  "tags": a list of 20-30 tags\n'
+        '  "tags": a list of 25-30 tags\n'
         "Respond with JSON only, no other text."
     )
 
@@ -162,8 +162,12 @@ def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> s
         else:
             photo_id = row[0]
 
-        image_bytes = _prepare_image(image_bytes)
-        _tag_photo(cur, anthropic_client, photo_id, image_bytes)
+        try:
+            image_bytes = _prepare_image(image_bytes)
+            _tag_photo(cur, anthropic_client, photo_id, s3_key, image_bytes)
+        except Exception:
+            logger.exception("Failed to process image: %s", s3_key)
+            raise
 
     return "processed"
 
@@ -189,7 +193,7 @@ def _prepare_image(image_bytes: bytes) -> bytes:
             return buf.getvalue()
 
 
-def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None:
+def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: bytes) -> None:
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     response = anthropic_client.messages.create(
@@ -237,7 +241,7 @@ def _tag_photo(cur, anthropic_client, photo_id: int, image_bytes: bytes) -> None
 
     for tag_name in tags:
         if not isinstance(tag_name, str):
-            logger.warning("Skipping non-string tag: %r", tag_name)
+            logger.warning("Skipping non-string tag %r for image: %s", tag_name, s3_key)
             continue
         cur.execute(
             """

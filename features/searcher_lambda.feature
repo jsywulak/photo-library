@@ -56,3 +56,10 @@ Feature: Searcher Lambda
     When the Function URL is called with tags "cat" and the correct API key
     Then the HTTP response status should be 200
     And the presigned URL for the photo should return HTTP 200
+
+  Scenario: Search results include a thumbnail URL
+    Given the searcher Lambda is deployed
+    And a photo is uploaded to S3 and tagged in the database with "cat"
+    And a thumbnail exists in the thumbnail bucket for that photo
+    When the Lambda is invoked with tags "cat"
+    Then each result should include a thumbnail_url

@@ -1,0 +1,4 @@
+# Pinned dependencies for the thumbnailer Lambda deployment package.
+# boto3 is omitted — it is pre-installed in the Lambda runtime.
+# Update these versions to match requirements-lock.txt when upgrading deps.
+pillow==12.1.1

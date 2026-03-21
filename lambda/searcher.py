@@ -4,11 +4,20 @@ searcher.py — photo search logic.
 search() queries photos that match any of the given tags, ranked by how many
 of the searched tags each photo has. Photos with no matching tags are excluded.
 
-Each result includes a presigned S3 URL valid for 1 hour for direct image display.
+Each result includes:
+  - url: a presigned S3 URL valid for 1 hour for full-size image display
+  - thumbnail_url: a public URL to the WebP thumbnail in the thumbnail bucket
 """
+
+from pathlib import Path
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
+
+
+def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
+    thumb_key = f"thumbnails/{Path(s3_key).stem}.webp"
+    return f"https://{thumbnail_bucket}.s3.amazonaws.com/{thumb_key}"
 
 
 def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
@@ -17,7 +26,7 @@ def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-def search(tags: list[str], db_conn, s3_client=None, bucket: str = None) -> list[dict]:
+def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None) -> list[dict]:
     normalised = [t.strip().lower() for t in tags]
     with db_conn.cursor() as cur:
         cur.execute(
@@ -43,5 +52,7 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None) -> list
                 Params={"Bucket": bucket, "Key": row[0]},
                 ExpiresIn=_PRESIGNED_URL_EXPIRY,
             )
+        if thumbnail_bucket:
+            entry["thumbnail_url"] = _thumbnail_url(row[0], thumbnail_bucket)
         results.append(entry)
     return results

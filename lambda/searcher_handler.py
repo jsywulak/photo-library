@@ -37,6 +37,10 @@ _S3_BUCKET = os.environ.get("S3_BUCKET")
 if not _S3_BUCKET:
     raise RuntimeError("S3_BUCKET environment variable is not set")
 
+_THUMBNAIL_BUCKET = os.environ.get("THUMBNAIL_BUCKET")
+if not _THUMBNAIL_BUCKET:
+    raise RuntimeError("THUMBNAIL_BUCKET environment variable is not set")
+
 _s3_client = boto3.client("s3")
 
 _CORS_HEADERS = {
@@ -95,7 +99,7 @@ def lambda_handler(event, context):
 
     conn = psycopg2.connect(_DB_URL, connect_timeout=10)
     try:
-        results = search(tags, conn, _s3_client, _S3_BUCKET)
+        results = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET)
         logger.info("Found %d results", len(results))
         return _http_response(200, results) if is_function_url else results
     finally:

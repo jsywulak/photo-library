@@ -35,3 +35,8 @@ Feature: Photo processing pipeline
     When the processor runs
     Then 1 photo should be processed
     And "large_photo.jpg" should have tags in the database
+
+  Scenario: Processing errors include the image filename in the log
+    Given a local directory with a corrupted oversized image "bad_photo.jpg"
+    When the processor attempts to process the image and fails
+    Then the error log should include "bad_photo.jpg"

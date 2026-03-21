@@ -347,7 +347,7 @@
         item.className = 'grid-item';
 
         const img = document.createElement('img');
-        img.src = result.url;
+        img.src = result.thumbnail_url;
         img.alt = result.s3_key;
         img.loading = 'lazy';
         img.addEventListener('click', () => openLightbox(result.url));

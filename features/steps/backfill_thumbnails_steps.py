@@ -1,0 +1,93 @@
+"""
+Step definitions for backfill_thumbnails.feature.
+
+Requires in .env:
+  - S3_BUCKET                bucket containing source photos (photo-tagging-photos)
+  - THUMBNAIL_BUCKET         bucket for thumbnails (photo-tagging-thumbnails)
+  - THUMBNAILER_LAMBDA_NAME  name of the deployed thumbnailer Lambda
+
+Uploads a real photo to S3, seeds a matching Neon DB record, runs the backfill,
+and asserts the thumbnail was created. Cleanup is handled by environment.py via
+context.searcher_s3_uploads, context.neon_test_s3_keys, and context.test_thumbnail_*.
+"""
+
+import os
+import sys
+import uuid
+from pathlib import Path
+
+import boto3
+from behave import given, then, when
+
+sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
+
+from common import neon_conn, seed_photo
+
+IMAGES_DIR = Path(__file__).parents[2] / "images"
+
+# Reuse the same thumbnail key derivation as the thumbnailer Lambda.
+def _thumbnail_key(s3_key: str) -> str:
+    return f"thumbnails/{Path(s3_key).stem}.webp"
+
+
+@given("a processed photo exists in the database and S3")
+def step_processed_photo_in_db_and_s3(context):
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+
+    bucket = os.environ["S3_BUCKET"]
+    images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
+    assert images, f"No sample images found in {IMAGES_DIR}"
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    s3_key = prefix + images[0].name
+
+    boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
+    context.searcher_s3_uploads.append((bucket, s3_key))
+
+    conn = neon_conn()
+    seed_photo(conn, s3_key, ["test"])
+    conn.commit()
+    conn.close()
+
+    context.neon_test_s3_keys.append(s3_key)
+    context.backfill_s3_key = s3_key
+    context.test_thumbnail_key = _thumbnail_key(s3_key)
+    context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+
+
+@when("the backfill script runs for that photo")
+def step_run_backfill(context):
+    from backfill_thumbnails import run_backfill
+
+    lam = boto3.client("lambda")
+    context.backfill_result = run_backfill(
+        s3_keys=[context.backfill_s3_key],
+        lambda_client=lam,
+        lambda_name=os.environ["THUMBNAILER_LAMBDA_NAME"],
+    )
+
+
+@then("a thumbnail should exist in the thumbnail bucket for that photo")
+def step_thumbnail_exists_for_photo(context):
+    s3 = boto3.client("s3")
+    try:
+        s3.head_object(Bucket=context.test_thumbnail_bucket, Key=context.test_thumbnail_key)
+    except s3.exceptions.ClientError:
+        raise AssertionError(
+            f"Thumbnail {context.test_thumbnail_key!r} not found in "
+            f"{context.test_thumbnail_bucket!r}"
+        )
+
+
+@then("the backfill result should show 0 thumbnailed and 1 skipped")
+def step_backfill_result_counts(context):
+    result = context.backfill_result
+    assert result["thumbnailed"] == 0, (
+        f"Expected 0 thumbnailed, got {result['thumbnailed']}"
+    )
+    assert result["skipped"] == 1, (
+        f"Expected 1 skipped, got {result['skipped']}"
+    )

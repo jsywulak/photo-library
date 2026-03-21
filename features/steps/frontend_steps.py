@@ -28,7 +28,11 @@ def step_tags_returns(context, tags_json):
 @given("the search API returns {n:d} results")
 def step_search_returns_n(context, n):
     context.mock_results = [
-        {"s3_key": f"photo_{i}.jpg", "url": f"https://picsum.photos/seed/{i}/400/300"}
+        {
+            "s3_key": f"photo_{i}.jpg",
+            "url": f"https://presigned.example.com/photo_{i}.jpg",
+            "thumbnail_url": f"https://thumbnails.example.com/thumbnails/photo_{i}.webp",
+        }
         for i in range(n)
     ]
 
@@ -154,3 +158,20 @@ def step_lightbox_visible(context):
 @then("the lightbox is hidden")
 def step_lightbox_hidden(context):
     context.page.locator("#lightbox").wait_for(state="hidden")
+
+
+
+@then("the grid images use the thumbnail URL")
+def step_grid_uses_thumbnail_url(context):
+    img = context.page.locator(".grid-item img").first
+    img.wait_for()
+    src = img.get_attribute("src")
+    expected = context.mock_results[0]["thumbnail_url"]
+    assert src == expected, f"Expected thumbnail URL {expected!r}, got {src!r}"
+
+
+@then("the lightbox shows the full-size URL")
+def step_lightbox_shows_full_url(context):
+    src = context.page.locator("#lightbox-img").get_attribute("src")
+    expected = context.mock_results[0]["url"]
+    assert src == expected, f"Expected full-size URL {expected!r}, got {src!r}"

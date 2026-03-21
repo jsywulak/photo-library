@@ -25,6 +25,11 @@ Parameters:
     Type: String
     Description: S3 bucket containing the photos (for presigned URL generation)
 
+  ThumbnailBucket:
+    Type: String
+    Default: photo-tagging-thumbnails
+    Description: Public S3 bucket containing thumbnails
+
 Resources:
   SearcherRole:
     Type: AWS::IAM::Role
@@ -64,6 +69,7 @@ Resources:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
           API_KEY: !Ref ApiKey
           S3_BUCKET: !Ref PhotosBucket
+          THUMBNAIL_BUCKET: !Ref ThumbnailBucket
 
   SearcherFunctionUrl:
     Type: AWS::Lambda::Url

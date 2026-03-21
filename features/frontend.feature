@@ -46,12 +46,19 @@ Feature: Frontend UI
     And I click the "floral" suggestion
     Then I see the status message "No photos found."
 
-  Scenario: Clicking a photo opens the lightbox
+  Scenario: Grid images use the thumbnail URL
+    Given the search API returns 1 result
+    When I open the frontend
+    And I click the "floral" suggestion
+    Then the grid images use the thumbnail URL
+
+  Scenario: Clicking a photo opens the lightbox with the full-size URL
     Given the search API returns 1 result
     When I open the frontend
     And I click the "floral" suggestion
     And I click the first photo
     Then the lightbox is visible
+    And the lightbox shows the full-size URL
 
   Scenario: Closing the lightbox with the × button
     Given the search API returns 1 result

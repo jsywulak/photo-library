@@ -11,6 +11,7 @@ Isolation note: files are copied into a temp dir with a unique per-run prefix
 that has been committed to the database by make process.
 """
 
+import logging.handlers
 import os
 import shutil
 import sys
@@ -103,6 +104,25 @@ def step_oversized_image(context, filename):
     context.location = tmp
 
 
+@given('a local directory with a corrupted oversized image "{filename}"')
+def step_corrupted_oversized_image(context, filename):
+    """Create a file that is too large to skip resizing but is not valid JPEG.
+
+    _prepare_image() will call Image.open() on anything above MAX_IMAGE_BYTES,
+    which raises an exception on non-JPEG data — triggering the error-logging
+    path without needing to call the Anthropic API.
+    """
+    from processor import MAX_IMAGE_BYTES
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    corrupt_bytes = b"\x00" * (MAX_IMAGE_BYTES + 1)
+    (Path(tmp) / (prefix + filename)).write_bytes(corrupt_bytes)
+    context.location = tmp
+
+
 @given('a local directory with an unsupported file "{filename}"')
 def step_unsupported_file(context, filename):
     prefix = f"test-{uuid.uuid4().hex[:8]}-"
@@ -126,6 +146,38 @@ def step_key_in_db(context, key):
 # ---------------------------------------------------------------------------
 # When
 # ---------------------------------------------------------------------------
+
+@when("the processor attempts to process the image and fails")
+def step_run_expecting_failure(context):
+    import logging
+    import processor
+
+    log_handler = logging.handlers.MemoryHandler(capacity=1000, flushLevel=logging.CRITICAL)
+    log_handler.buffer = []
+
+    class CapturingHandler(logging.Handler):
+        def emit(self, record):
+            log_handler.buffer.append(self.format(record))
+
+    capturing = CapturingHandler()
+    processor_logger = logging.getLogger("processor")
+    processor_logger.addHandler(capturing)
+    try:
+        filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
+        assert len(filenames) == 1
+        filename = filenames[0]
+        image_bytes = (Path(context.location) / filename).read_bytes()
+        try:
+            processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic())
+        except Exception as e:
+            context.processing_error = e
+        else:
+            context.processing_error = None
+    finally:
+        processor_logger.removeHandler(capturing)
+
+    context.captured_logs = log_handler.buffer
+
 
 @when("the processor runs")
 def step_run(context):
@@ -186,6 +238,17 @@ def step_photo_not_saved(context, key):
     with context.conn.cursor() as cur:
         cur.execute("SELECT id FROM photos WHERE s3_key = %s", (db_key,))
         assert cur.fetchone() is None, f"{db_key!r} should not be in photos table but was found"
+
+
+@then('the error log should include "{filename}"')
+def step_log_includes_filename(context, filename):
+    assert context.processing_error is not None, "Expected processing to fail but it succeeded"
+    db_key = context.key_map.get(filename, filename)
+    matching = [line for line in context.captured_logs if db_key in line]
+    assert matching, (
+        f"Expected log message containing {db_key!r} but got:\n"
+        + "\n".join(context.captured_logs)
+    )
 
 
 @then('"{key}" should have tags in the database')

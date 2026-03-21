@@ -241,6 +241,42 @@ def step_results_have_url(context):
         )
 
 
+@given("a thumbnail exists in the thumbnail bucket for that photo")
+def step_thumbnail_exists_for_searcher_photo(context):
+    import io
+    from pathlib import Path
+    from PIL import Image
+
+    s3_key = context.last_photo_key
+    thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+    thumb_key = f"thumbnails/{Path(s3_key).stem}.webp"
+
+    img = Image.new("RGB", (400, 400), color=(100, 100, 100))
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP")
+    buf.seek(0)
+    boto3.client("s3").put_object(
+        Bucket=thumbnail_bucket,
+        Key=thumb_key,
+        Body=buf.read(),
+        ContentType="image/webp",
+    )
+
+    # Register for cleanup via environment.py
+    context.test_thumbnail_key = thumb_key
+    context.test_thumbnail_bucket = thumbnail_bucket
+
+
+@then("each result should include a thumbnail_url")
+def step_results_have_thumbnail_url(context):
+    assert context.search_results, "Expected at least one result"
+    for result in context.search_results:
+        assert "thumbnail_url" in result, f"Result missing 'thumbnail_url' field: {result}"
+        assert result["thumbnail_url"].startswith("https://"), (
+            f"Expected HTTPS URL, got: {result['thumbnail_url']!r}"
+        )
+
+
 @then("the presigned URL for the photo should return HTTP 200")
 def step_presigned_url_accessible(context):
     result = next(

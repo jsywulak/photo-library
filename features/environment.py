@@ -21,7 +21,7 @@ def before_feature(context, feature):
 def after_feature(context, feature):
     if "frontend" in feature.tags:
         context.browser.close()
-        context._playwright.__exit__(None, None, None)
+        context._playwright.stop()
 
 
 def before_scenario(context, scenario):
@@ -63,6 +63,13 @@ def after_scenario(context, scenario):
                 cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
             conn.commit()
             conn.close()
+        except Exception:
+            pass
+    # Clean up thumbnail and source photo uploaded by thumbnailer Lambda tests.
+    if hasattr(context, "test_thumbnail_key"):
+        s3 = boto3.client("s3")
+        try:
+            s3.delete_object(Bucket=context.test_thumbnail_bucket, Key=context.test_thumbnail_key)
         except Exception:
             pass
     # Clean up S3 objects uploaded directly by searcher Lambda tests.

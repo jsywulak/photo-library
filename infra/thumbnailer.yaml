@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Thumbnailer Lambda and public thumbnail S3 bucket
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  DeploymentKey:
+    Type: String
+    Default: thumbnailer.zip
+    Description: S3 key of the Lambda deployment zip
+
+  PhotosBucket:
+    Type: String
+    Description: S3 bucket the Lambda reads source photos from
+
+  ThumbnailBucketName:
+    Type: String
+    Default: photo-tagging-thumbnails
+    Description: Name of the public S3 bucket for thumbnails
+
+Resources:
+  ThumbnailsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ThumbnailBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  ThumbnailsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ThumbnailsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${ThumbnailBucketName}/*'
+
+  ThumbnailerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:aws:s3:::${PhotosBucket}/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${ThumbnailBucketName}'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${ThumbnailBucketName}/*'
+
+  ThumbnailerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-thumbnailer'
+      Runtime: python3.12
+      Handler: thumbnailer_handler.lambda_handler
+      Role: !GetAtt ThumbnailerRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
+      Environment:
+        Variables:
+          SOURCE_BUCKET: !Ref PhotosBucket
+          THUMBNAIL_BUCKET: !Ref ThumbnailBucketName
+
+Outputs:
+  ThumbnailsBucketName:
+    Description: Public S3 bucket for thumbnails
+    Value: !Ref ThumbnailsBucket
+
+  ThumbnailsBucketUrl:
+    Description: Base URL for thumbnails
+    Value: !Sub 'https://${ThumbnailBucketName}.s3.amazonaws.com'
+
+  ThumbnailerFunctionName:
+    Description: Lambda function name (use as THUMBNAILER_LAMBDA_NAME in .env)
+    Value: !Ref ThumbnailerFunction

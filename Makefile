@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher neon-tags neon-clean-tags neon-sync-check neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails neon-tags neon-clean-tags neon-sync-check neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend help clean
 
 help:
 	@echo "Local development:"
@@ -33,7 +33,9 @@ help:
 	@echo "  make neon-reprocess-errors  Re-invoke processor Lambda for all errored photos"
 	@echo "  make neon-clean-orphans     Delete DB records with no matching S3 object"
 	@echo "  make deploy-processor Build and deploy the processor Lambda"
-	@echo "  make deploy-searcher  Build and deploy the searcher Lambda"
+	@echo "  make deploy-searcher      Build and deploy the searcher Lambda"
+	@echo "  make deploy-thumbnailer   Build and deploy the thumbnailer Lambda"
+	@echo "  make backfill-thumbnails  Generate thumbnails for all processed photos"
 	@echo "  make deploy-frontend  Upload frontend to S3"
 
 install: install-hooks
@@ -91,6 +93,12 @@ package-searcher:
 deploy-searcher: package-searcher
 	@bash scripts/deploy-searcher.sh
 
+package-thumbnailer:
+	@bash scripts/package-thumbnailer.sh
+
+deploy-thumbnailer: package-thumbnailer
+	@bash scripts/deploy-thumbnailer.sh
+
 deploy-frontend:
 	@bash scripts/deploy-frontend.sh
 
@@ -117,6 +125,9 @@ neon-reprocess-errors:
 
 neon-clean-orphans:
 	python scripts/clean_orphans.py
+
+backfill-thumbnails:
+	python scripts/backfill_thumbnails.py
 
 clean:
 	rm -rf dist/ lambda/__pycache__ db/__pycache__ scripts/__pycache__ features/__pycache__
