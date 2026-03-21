@@ -221,10 +221,55 @@ Four new `make` targets for ongoing DB/S3 health checks:
 - Final state: **1,278 photos, all processed OK, fully consistent with S3**.
 
 
-  Current session                                                                                                                                                                              
-  ████████████████████                               40% used                                                           
-  Resets 11pm (America/New_York)                                                              
-                                                                                                                                                                                                 
-  Current week (all models)                                                                                                                                                                      
-  ████                                               8% used
+---
+
+## Session — 2026-03-20
+
+### Model swap and prompt tuning
+- Switched image recognition model from `claude-opus-4-6` to `claude-sonnet-4-6`
+- Bumped tag range in the prompt from "20-30" to "25-30" to improve tag variety
+- Added `s3_key` context to processor error log messages so failures can be traced back to a specific image
+- Added BDD scenario proving error logs include the image filename
+
+### Production cleanup
+- Found and deleted 174–175 zero-byte images from `photo-tagging-photos` S3 bucket (corrupt at source)
+- Ran `neon-clean-orphans` to remove 180 orphaned DB records (the zero-byte photos + stale test records)
+- Ran `neon-clean-tags` to remove orphaned tags
+
+### Thumbnail pipeline (new feature)
+- Added `lambda/thumbnailer.py` — core logic: fetches photo from S3, applies EXIF orientation, center-crops to square, resizes to 400×400, saves as WebP quality 85, skips if thumbnail already exists
+- Added `lambda/thumbnailer_handler.py` — Lambda entry point, reads `SOURCE_BUCKET` / `THUMBNAIL_BUCKET` env vars
+- Added `infra/thumbnailer.yaml` — CloudFormation stack creating the `photo-tagging-thumbnails` public S3 bucket (with bucket policy granting public `s3:GetObject`) and the thumbnailer Lambda with appropriate IAM permissions
+- Added `scripts/backfill_thumbnails.py` — invokes the thumbnailer Lambda for every processed photo in Neon, with configurable parallelism via `ThreadPoolExecutor` (currently 20 workers)
+- Added `scripts/package-thumbnailer.sh` and `scripts/deploy-thumbnailer.sh`
+- Added `make package-thumbnailer`, `make deploy-thumbnailer`, `make backfill-thumbnails` targets
+
+### Searcher update
+- Updated `lambda/searcher.py` to return `thumbnail_url` (plain public S3 URL) alongside the existing presigned `url` in each search result
+- Updated `lambda/searcher_handler.py` to read and pass through `THUMBNAIL_BUCKET`
+- Updated `infra/searcher.yaml` and `scripts/deploy-searcher.sh` to wire in `ThumbnailBucket`
+
+### Frontend update (blue-green)
+- Deployed thumbnail-aware frontend as `index2.html` alongside existing `index.html` for safe validation
+- Grid now uses `thumbnail_url` for fast-loading thumbnails; lightbox still opens the full presigned URL
+- After validating thumbnails looked correct, promoted `index2.html` to `index.html` and cleaned up
+- Fixed `HOOK-ERROR in after_feature` in `environment.py` — replaced `context._playwright.__exit__()` with `context._playwright.stop()`
+
+### Bug fix: sideways thumbnails
+- Discovered portrait-orientation photos were generating sideways thumbnails due to EXIF rotation not being applied
+- Fixed by wrapping `Image.open()` with `ImageOps.exif_transpose()` before cropping
+- Redeployed thumbnailer, wiped thumbnail bucket, re-ran backfill
+
+### BDD test coverage added
+- `features/thumbnailer_lambda.feature` — 3 `@infrastructure` scenarios (Lambda active, creates WebP, skips existing)
+- `features/backfill_thumbnails.feature` — 2 `@infrastructure` scenarios (creates thumbnails, skips existing)
+- `features/searcher_lambda.feature` — added scenario asserting `thumbnail_url` in search results
+- `features/frontend.feature` — added scenarios asserting grid uses thumbnail URL and lightbox uses full-size URL
+
+  Current session                                                              
+  ██████████▌                                        21% used 
+  Resets 12am (America/New_York)                                                 
+
+  Current week (all models)
+  ██████                                             12% used
   Resets Mar 25 at 6pm (America/New_York)
