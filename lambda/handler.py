@@ -24,14 +24,19 @@ if not _DB_URL:
     raise RuntimeError("NEON_DATABASE_URL environment variable is not set")
 
 
-def lambda_handler(event, context):
-    records = event.get("Records", [])
-    if not records:
-        raise ValueError(f"No Records in event: {event}")
+def _extract_bucket_key(event):
+    """Extract bucket and key from either an S3 notification or EventBridge event."""
+    if "Records" in event:
+        record = event["Records"][0].get("s3", {})
+        return record.get("bucket", {}).get("name"), record.get("object", {}).get("key")
+    if event.get("source") == "aws.s3":
+        detail = event.get("detail", {})
+        return detail.get("bucket", {}).get("name"), detail.get("object", {}).get("key")
+    return None, None
 
-    record = records[0].get("s3", {})
-    bucket = record.get("bucket", {}).get("name")
-    key = record.get("object", {}).get("key")
+
+def lambda_handler(event, context):
+    bucket, key = _extract_bucket_key(event)
 
     if not bucket or not key:
         raise ValueError(f"Could not extract bucket/key from event: {event}")
@@ -47,13 +52,13 @@ def lambda_handler(event, context):
     conn = psycopg2.connect(_DB_URL, connect_timeout=10)
     conn.autocommit = False
     try:
-        status = process_one(key, image_bytes, conn, anthropic.Anthropic(max_retries=4))
+        status = process_one(key, image_bytes, conn, anthropic.Anthropic(max_retries=4), bucket=bucket)
         conn.commit()
         logger.info("Completed s3://%s/%s: %s", bucket, key, status)
         return {"status": status, "s3_key": key}
     except Exception as e:
         conn.rollback()
-        record_error(conn, key, e)
+        record_error(conn, key, e, bucket=bucket)
         raise
     finally:
         conn.close()

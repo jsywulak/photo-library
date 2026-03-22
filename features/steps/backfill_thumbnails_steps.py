@@ -54,6 +54,36 @@ def step_processed_photo_in_db_and_s3(context):
 
     context.neon_test_s3_keys.append(s3_key)
     context.backfill_s3_key = s3_key
+    context.backfill_source_bucket = bucket
+    context.test_thumbnail_key = _thumbnail_key(s3_key)
+    context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+
+
+@given("an inbox photo exists in the database and inbox S3 bucket")
+def step_inbox_photo_in_db_and_s3(context):
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+
+    inbox_bucket = os.environ["INBOX_BUCKET"]
+    images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
+    assert images, f"No sample images found in {IMAGES_DIR}"
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    s3_key = prefix + images[0].name
+
+    boto3.client("s3").upload_file(str(images[0]), inbox_bucket, s3_key)
+    context.searcher_s3_uploads.append((inbox_bucket, s3_key))
+
+    conn = neon_conn()
+    seed_photo(conn, s3_key, [], bucket=inbox_bucket)
+    conn.commit()
+    conn.close()
+
+    context.neon_test_s3_keys.append(s3_key)
+    context.backfill_s3_key = s3_key
+    context.backfill_source_bucket = inbox_bucket
     context.test_thumbnail_key = _thumbnail_key(s3_key)
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
 
@@ -65,6 +95,19 @@ def step_run_backfill(context):
     lam = boto3.client("lambda")
     context.backfill_result = run_backfill(
         s3_keys=[context.backfill_s3_key],
+        lambda_client=lam,
+        lambda_name=os.environ["THUMBNAILER_LAMBDA_NAME"],
+    )
+
+
+@when("the inbox backfill script runs for that photo")
+def step_run_inbox_backfill(context):
+    from backfill_inbox_thumbnails import run_inbox_backfill
+
+    lam = boto3.client("lambda")
+    context.backfill_result = run_inbox_backfill(
+        s3_keys=[context.backfill_s3_key],
+        inbox_bucket=context.backfill_source_bucket,
         lambda_client=lam,
         lambda_name=os.environ["THUMBNAILER_LAMBDA_NAME"],
     )

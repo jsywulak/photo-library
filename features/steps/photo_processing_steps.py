@@ -143,6 +143,16 @@ def step_key_in_db(context, key):
         )
 
 
+@given('"{key}" is already in the database for bucket "{bucket}"')
+def step_key_in_db_with_bucket(context, key, bucket):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO photos (s3_key, bucket, processed_at) VALUES (%s, %s, NOW()) ON CONFLICT DO NOTHING",
+            (db_key, bucket),
+        )
+
+
 # ---------------------------------------------------------------------------
 # When
 # ---------------------------------------------------------------------------
@@ -198,6 +208,25 @@ def step_run(context):
     context.result = {"discovered": discovered, "processed": processed, "skipped": skipped}
 
 
+@when('the processor runs for bucket "{bucket}"')
+def step_run_with_bucket(context, bucket):
+    import processor
+
+    filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
+    discovered = len(filenames)
+    processed = skipped = 0
+
+    for filename in filenames:
+        image_bytes = (Path(context.location) / filename).read_bytes()
+        status = processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic(), bucket=bucket)
+        if status == "skipped" or status == "unsupported":
+            skipped += 1
+        else:
+            processed += 1
+
+    context.result = {"discovered": discovered, "processed": processed, "skipped": skipped}
+
+
 # ---------------------------------------------------------------------------
 # Then
 # ---------------------------------------------------------------------------
@@ -230,6 +259,14 @@ def step_photo_saved(context, key):
     with context.conn.cursor() as cur:
         cur.execute("SELECT id FROM photos WHERE s3_key = %s", (db_key,))
         assert cur.fetchone(), f"{db_key!r} not found in photos table"
+
+
+@then('"{key}" should be saved to the database with bucket "{bucket}"')
+def step_photo_saved_with_bucket(context, key, bucket):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT id FROM photos WHERE s3_key = %s AND bucket = %s", (db_key, bucket))
+        assert cur.fetchone(), f"{db_key!r} not found in photos table with bucket {bucket!r}"
 
 
 @then('"{key}" should not be saved to the database')

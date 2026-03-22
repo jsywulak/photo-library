@@ -53,11 +53,25 @@ def step_tables_exist(context):
     assert not missing, f"Missing tables: {', '.join(missing)}"
 
 
+@given("the photos bucket is configured")
+def step_photos_bucket_configured(context):
+    bucket = os.environ.get("S3_BUCKET")
+    assert bucket, "S3_BUCKET is not set in the environment"
+    context.photos_bucket = bucket
+
+
 @given("the processor Lambda is configured")
 def step_processor_lambda_configured(context):
     name = os.environ.get("PROCESSOR_LAMBDA_NAME")
     assert name, "PROCESSOR_LAMBDA_NAME is not set in the environment"
     context.processor_lambda_name = name
+
+
+@given("the thumbnailer Lambda is configured")
+def step_thumbnailer_lambda_configured(context):
+    name = os.environ.get("THUMBNAILER_LAMBDA_NAME")
+    assert name, "THUMBNAILER_LAMBDA_NAME is not set in the environment"
+    context.thumbnailer_lambda_name = name
 
 
 @then("the reserved concurrency should be {limit:d}")
@@ -143,6 +157,46 @@ def step_invoke_function_via_url_permission_exists(context):
     assert has_url_invoke, (
         f"Lambda {context.searcher_lambda_name!r} is missing lambda:InvokeFunction permission "
         f"with lambda:InvokedViaFunctionUrl condition — Function URL will return 403"
+    )
+
+
+@then("the bucket should have EventBridge notifications enabled")
+def step_bucket_eventbridge_enabled(context):
+    s3 = boto3.client("s3")
+    config = s3.get_bucket_notification_configuration(Bucket=context.photos_bucket)
+    assert "EventBridgeConfiguration" in config, (
+        f"Bucket {context.photos_bucket!r} does not have EventBridge notifications enabled"
+    )
+
+
+def assert_eventbridge_rule_targets_lambda(lambda_name, photos_bucket):
+    """Assert that an EventBridge rule exists targeting lambda_name for S3 uploads to photos_bucket."""
+    lamb = boto3.client("lambda")
+    events = boto3.client("events")
+
+    fn_arn = lamb.get_function(FunctionName=lambda_name)["Configuration"]["FunctionArn"]
+
+    paginator = events.get_paginator("list_rule_names_by_target")
+    rule_names = [
+        name
+        for page in paginator.paginate(TargetArn=fn_arn)
+        for name in page["RuleNames"]
+    ]
+    assert rule_names, f"No EventBridge rules target Lambda {lambda_name!r}"
+
+    for rule_name in rule_names:
+        rule = events.describe_rule(Name=rule_name)
+        pattern = json.loads(rule.get("EventPattern", "{}"))
+        if (
+            pattern.get("source") == ["aws.s3"]
+            and pattern.get("detail-type") == ["Object Created"]
+            and photos_bucket in pattern.get("detail", {}).get("bucket", {}).get("name", [])
+        ):
+            return
+
+    raise AssertionError(
+        f"No EventBridge rule targets Lambda {lambda_name!r} for S3 uploads to {photos_bucket!r}. "
+        f"Found rules: {rule_names}"
     )
 
 

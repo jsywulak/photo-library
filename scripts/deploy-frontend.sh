@@ -15,6 +15,7 @@ BUCKET_NAME=$(aws cloudformation describe-stacks \
 
 echo "Uploading frontend to s3://${BUCKET_NAME}/"
 aws s3 cp frontend/index.html "s3://${BUCKET_NAME}/index.html" --content-type text/html
+aws s3 cp frontend/inbox.html "s3://${BUCKET_NAME}/inbox"      --content-type text/html
 aws s3 cp frontend/config.js  "s3://${BUCKET_NAME}/config.js"  --content-type application/javascript
 
 echo "Deployed: http://${FRONTEND_DOMAIN}"

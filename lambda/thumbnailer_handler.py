@@ -26,14 +26,27 @@ if not _THUMBNAIL_BUCKET:
     raise RuntimeError("THUMBNAIL_BUCKET environment variable is not set")
 
 
-def lambda_handler(event, context):
-    s3_key = event.get("s3_key")
-    if not s3_key:
-        raise ValueError(f"No s3_key in event: {event}")
+def _extract_bucket_key(event):
+    """Extract (source_bucket, s3_key) from a direct invocation, S3 notification, or EventBridge event."""
+    if "s3_key" in event:
+        return event.get("source_bucket", _SOURCE_BUCKET), event["s3_key"]
+    if "Records" in event:
+        s3 = event["Records"][0].get("s3", {})
+        return s3.get("bucket", {}).get("name", _SOURCE_BUCKET), s3.get("object", {}).get("key")
+    if event.get("source") == "aws.s3":
+        detail = event.get("detail", {})
+        return detail.get("bucket", {}).get("name", _SOURCE_BUCKET), detail.get("object", {}).get("key")
+    return _SOURCE_BUCKET, None
 
-    logger.info("Thumbnailing s3://%s/%s", _SOURCE_BUCKET, s3_key)
+
+def lambda_handler(event, context):
+    source_bucket, s3_key = _extract_bucket_key(event)
+    if not s3_key:
+        raise ValueError(f"Could not extract s3_key from event: {event}")
+
+    logger.info("Thumbnailing s3://%s/%s", source_bucket, s3_key)
 
     s3 = boto3.client("s3")
-    status = generate_thumbnail(s3_key, _SOURCE_BUCKET, _THUMBNAIL_BUCKET, s3)
+    status = generate_thumbnail(s3_key, source_bucket, _THUMBNAIL_BUCKET, s3)
 
-    return {"status": status, "thumbnail_key": thumbnail_key(s3_key)}
+    return {"status": status, "s3_key": s3_key, "thumbnail_key": thumbnail_key(s3_key)}

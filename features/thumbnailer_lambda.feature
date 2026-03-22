@@ -7,6 +7,10 @@ Feature: Thumbnailer Lambda
     Given the thumbnailer Lambda is deployed
     Then the thumbnailer function should be active
 
+  Scenario: Thumbnailer Lambda is triggered by S3 uploads via EventBridge
+    Given the thumbnailer Lambda is deployed
+    Then an EventBridge rule should trigger the thumbnailer Lambda on S3 uploads to the photos bucket
+
   Scenario: Thumbnailing a photo creates a WebP in the thumbnail bucket
     Given the thumbnailer Lambda is deployed
     And a test photo is uploaded to the photos bucket

@@ -9,6 +9,7 @@ aws cloudformation deploy \
   --parameter-overrides \
     DeploymentBucket="${DEPLOYMENT_BUCKET}" \
     PhotosBucket="${S3_BUCKET}" \
+    InboxBucket="${INBOX_BUCKET}" \
   --capabilities CAPABILITY_IAM
 
 # Push the new code to Lambda (CloudFormation doesn't detect S3 object changes)

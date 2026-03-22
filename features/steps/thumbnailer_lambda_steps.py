@@ -21,6 +21,8 @@ import boto3
 from behave import given, then, when
 from PIL import Image
 
+from infrastructure_steps import assert_eventbridge_rule_targets_lambda
+
 IMAGES_DIR = Path(__file__).parents[2] / "images"
 
 
@@ -90,6 +92,11 @@ def step_thumbnailer_active(context):
     assert context.thumbnailer_lambda_state == "Active", (
         f"Expected Lambda state Active, got {context.thumbnailer_lambda_state!r}"
     )
+
+
+@then("an EventBridge rule should trigger the thumbnailer Lambda on S3 uploads to the photos bucket")
+def step_thumbnailer_eventbridge_rule(context):
+    assert_eventbridge_rule_targets_lambda(context.thumbnailer_lambda_name, os.environ["S3_BUCKET"])
 
 
 @then("a thumbnail should exist in the thumbnail bucket")

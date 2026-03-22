@@ -205,19 +205,8 @@ def step_upload_to_s3_and_seed(context, tags):
     bucket = os.environ["S3_BUCKET"]
 
     # Minimal valid JPEG bytes (1x1 pixel)
-    minimal_jpeg = (
-        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
-        b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
-        b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
-        b"\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\x87"
-        b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
-        b"\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00"
-        b"\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b"
-        b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb\xd2\x8a(\x03\xff\xd9"
-    )
-
     boto3.client("s3").put_object(
-        Bucket=bucket, Key=s3_key, Body=minimal_jpeg, ContentType="image/jpeg"
+        Bucket=bucket, Key=s3_key, Body=_MINIMAL_JPEG, ContentType="image/jpeg"
     )
     context.searcher_s3_uploads.append((bucket, s3_key))
 
@@ -275,6 +264,97 @@ def step_results_have_thumbnail_url(context):
         assert result["thumbnail_url"].startswith("https://"), (
             f"Expected HTTPS URL, got: {result['thumbnail_url']!r}"
         )
+
+
+_MINIMAL_JPEG = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t"
+    b"\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a"
+    b"\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\x87"
+    b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00"
+    b"\xff\xc4\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00"
+    b"\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b"
+    b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb\xd2\x8a(\x03\xff\xd9"
+)
+
+
+@given("a photo is uploaded to the inbox bucket and recorded in the database")
+def step_upload_to_inbox_with_db(context):
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    s3_key = f"{prefix}photo.jpg"
+    bucket = os.environ["INBOX_BUCKET"]
+
+    boto3.client("s3").put_object(
+        Bucket=bucket, Key=s3_key, Body=_MINIMAL_JPEG, ContentType="image/jpeg"
+    )
+    context.searcher_s3_uploads.append((bucket, s3_key))
+
+    conn = neon_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO photos (s3_key, bucket) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (s3_key, bucket),
+        )
+    conn.commit()
+    conn.close()
+
+    context.neon_test_s3_keys.append(s3_key)
+    context.inbox_s3_key = s3_key
+
+
+@when("the Function URL GET /inbox is called with the correct API key")
+def step_get_inbox_correct_key(context):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/inbox"
+    api_key = os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+
+
+@when("the Function URL GET /inbox is called with an incorrect API key")
+def step_get_inbox_wrong_key(context):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/inbox"
+    req = urllib.request.Request(url, headers={"x-api-key": "wrong-key"}, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
+@then("each inbox result should include a thumbnail_url")
+def step_inbox_results_have_thumbnail_url(context):
+    assert context.http_body, "Expected at least one inbox result"
+    for result in context.http_body:
+        assert "thumbnail_url" in result, f"Inbox result missing 'thumbnail_url': {result}"
+        assert result["thumbnail_url"].startswith("https://"), (
+            f"Expected HTTPS thumbnail URL, got: {result['thumbnail_url']!r}"
+        )
+
+
+@then("the response body should contain the inbox photo with a presigned URL")
+def step_inbox_contains_photo(context):
+    keys = {item["s3_key"] for item in context.http_body}
+    assert context.inbox_s3_key in keys, (
+        f"Expected {context.inbox_s3_key!r} in inbox response, got: {keys}"
+    )
+    result = next(r for r in context.http_body if r["s3_key"] == context.inbox_s3_key)
+    assert "url" in result and result["url"].startswith("https://"), (
+        f"Expected presigned URL in result, got: {result}"
+    )
+
+
+@then("the response body should be a list")
+def step_response_is_list(context):
+    assert isinstance(context.http_body, list), (
+        f"Expected a list, got: {type(context.http_body)}"
+    )
 
 
 @then("the presigned URL for the photo should return HTTP 200")

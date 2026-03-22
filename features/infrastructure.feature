@@ -30,3 +30,7 @@ Feature: Cloud infrastructure
     Given the searcher Lambda is configured
     Then the Lambda resource policy should not grant unrestricted lambda:InvokeFunction to Principal "*"
     And the Lambda resource policy should grant lambda:InvokeFunction only via function URL
+
+  Scenario: Photos bucket has EventBridge notifications enabled
+    Given the photos bucket is configured
+    Then the bucket should have EventBridge notifications enabled

@@ -15,6 +15,10 @@ Parameters:
     Type: String
     Description: S3 bucket the Lambda reads source photos from
 
+  InboxBucket:
+    Type: String
+    Description: S3 bucket for unprocessed inbox photos
+
   ThumbnailBucketName:
     Type: String
     Default: photo-tagging-thumbnails
@@ -62,7 +66,9 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub 'arn:aws:s3:::${PhotosBucket}/*'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PhotosBucket}/*'
+                  - !Sub 'arn:aws:s3:::${InboxBucket}/*'
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !Sub 'arn:aws:s3:::${ThumbnailBucketName}'
@@ -89,6 +95,31 @@ Resources:
           SOURCE_BUCKET: !Ref PhotosBucket
           THUMBNAIL_BUCKET: !Ref ThumbnailBucketName
 
+  ThumbnailerEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref PhotosBucket
+              - !Ref InboxBucket
+      Targets:
+        - Id: ThumbnailerLambdaTarget
+          Arn: !GetAtt ThumbnailerFunction.Arn
+
+  ThumbnailerEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ThumbnailerFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ThumbnailerEventBridgeRule.Arn
+
 Outputs:
   ThumbnailsBucketName:
     Description: Public S3 bucket for thumbnails
@@ -101,3 +132,7 @@ Outputs:
   ThumbnailerFunctionName:
     Description: Lambda function name (use as THUMBNAILER_LAMBDA_NAME in .env)
     Value: !Ref ThumbnailerFunction
+
+  ThumbnailerFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ThumbnailerFunction.Arn

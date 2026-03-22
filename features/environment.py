@@ -30,6 +30,7 @@ def before_scenario(context, scenario):
         # Default mock data — individual scenarios can override with Given steps.
         context.mock_tags = []
         context.mock_results = []
+        context.mock_inbox_results = []
         context.page = None
         return
     if "infrastructure" not in scenario.feature.tags:
@@ -59,7 +60,10 @@ def after_scenario(context, scenario):
         try:
             conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM photos WHERE s3_key = %s", (context.test_s3_key,))
+                cur.execute(
+                    "DELETE FROM photos WHERE s3_key = %s AND bucket = %s",
+                    (context.test_s3_key, context.test_s3_bucket),
+                )
                 cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
             conn.commit()
             conn.close()

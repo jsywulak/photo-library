@@ -10,6 +10,8 @@ aws cloudformation deploy \
     DeploymentBucket="${DEPLOYMENT_BUCKET}" \
     NeonDatabaseUrl="${NEON_DATABASE_URL}" \
     AnthropicApiKey="${ANTHROPIC_API_KEY}" \
+    PhotosBucket="${S3_BUCKET}" \
+    InboxBucket="${INBOX_BUCKET}" \
   --capabilities CAPABILITY_IAM
 
 # Push the new code to Lambda (CloudFormation doesn't detect S3 object changes)

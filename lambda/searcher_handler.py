@@ -20,7 +20,7 @@ import os
 import boto3
 import psycopg2
 
-from searcher import get_random_tags, search
+from searcher import get_random_tags, list_inbox, search
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -40,6 +40,10 @@ if not _S3_BUCKET:
 _THUMBNAIL_BUCKET = os.environ.get("THUMBNAIL_BUCKET")
 if not _THUMBNAIL_BUCKET:
     raise RuntimeError("THUMBNAIL_BUCKET environment variable is not set")
+
+_INBOX_BUCKET = os.environ.get("INBOX_BUCKET")
+if not _INBOX_BUCKET:
+    raise RuntimeError("INBOX_BUCKET environment variable is not set")
 
 _s3_client = boto3.client("s3")
 
@@ -77,6 +81,13 @@ def lambda_handler(event, context):
             conn = psycopg2.connect(_DB_URL, connect_timeout=10)
             try:
                 return _http_response(200, get_random_tags(conn))
+            finally:
+                conn.close()
+
+        if method == "GET" and path == "/inbox":
+            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+            try:
+                return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET))
             finally:
                 conn.close()
 

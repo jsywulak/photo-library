@@ -7,5 +7,7 @@ venv/
 .venv/
 images/
 dist/
+backups/
 frontend/config.js
 TODO.md
+.DS_Store

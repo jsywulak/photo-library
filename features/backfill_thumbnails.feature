@@ -13,3 +13,14 @@ Feature: Thumbnail backfill script
     And a thumbnail already exists for the photo
     When the backfill script runs for that photo
     Then the backfill result should show 0 thumbnailed and 1 skipped
+
+  Scenario: Inbox backfill creates thumbnails for inbox photos without one
+    Given an inbox photo exists in the database and inbox S3 bucket
+    When the inbox backfill script runs for that photo
+    Then a thumbnail should exist in the thumbnail bucket for that photo
+
+  Scenario: Inbox backfill skips photos that already have a thumbnail
+    Given an inbox photo exists in the database and inbox S3 bucket
+    And a thumbnail already exists for the photo
+    When the inbox backfill script runs for that photo
+    Then the backfill result should show 0 thumbnailed and 1 skipped

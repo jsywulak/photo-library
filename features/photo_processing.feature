@@ -40,3 +40,15 @@ Feature: Photo processing pipeline
     Given a local directory with a corrupted oversized image "bad_photo.jpg"
     When the processor attempts to process the image and fails
     Then the error log should include "bad_photo.jpg"
+
+  Scenario: Photos are saved with their source bucket
+    Given a local directory with photos "photo1.jpg"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then "photo1.jpg" should be saved to the database with bucket "photo-tagging-inbox"
+
+  Scenario: Same photo key in different buckets can both be stored
+    Given a local directory with photos "photo1.jpg"
+    And "photo1.jpg" is already in the database for bucket "photo-tagging-photos"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then 1 photo should be processed
+    And "photo1.jpg" should be saved to the database with bucket "photo-tagging-inbox"

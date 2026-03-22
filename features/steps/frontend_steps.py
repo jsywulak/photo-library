@@ -15,9 +15,23 @@ from pathlib import Path
 from behave import given, then, when
 
 FRONTEND_HTML = Path(__file__).parents[2] / "frontend" / "index.html"
+INBOX_HTML = Path(__file__).parents[2] / "frontend" / "inbox.html"
 
 
 # ── Mock setup ───────────────────────────────────────────────────────────────
+
+@given("the inbox API returns {n:d} result")
+@given("the inbox API returns {n:d} results")
+def step_inbox_returns_n(context, n):
+    context.mock_inbox_results = [
+        {
+            "s3_key": f"inbox_photo_{i}.jpg",
+            "url": f"https://presigned.example.com/inbox_photo_{i}.jpg",
+            "thumbnail_url": f"https://thumbnails.example.com/thumbnails/inbox_photo_{i}.webp",
+        }
+        for i in range(n)
+    ]
+
 
 @given("the tags API returns {tags_json}")
 def step_tags_returns(context, tags_json):
@@ -38,6 +52,23 @@ def step_search_returns_n(context, n):
 
 
 # ── Page open ────────────────────────────────────────────────────────────────
+
+@when("I open the inbox page")
+def step_open_inbox(context):
+    page = context.browser.new_page()
+    context.page = page
+
+    def handle_lambda(route, request):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(context.mock_inbox_results),
+        )
+
+    page.route("**lambda-url**", handle_lambda)
+    page.goto(INBOX_HTML.as_uri())
+    page.wait_for_selector("#photo-grid")
+
 
 @when("I open the frontend")
 def step_open_frontend(context):
@@ -173,5 +204,6 @@ def step_grid_uses_thumbnail_url(context):
 @then("the lightbox shows the full-size URL")
 def step_lightbox_shows_full_url(context):
     src = context.page.locator("#lightbox-img").get_attribute("src")
-    expected = context.mock_results[0]["url"]
+    results = context.mock_results or context.mock_inbox_results
+    expected = results[0]["url"]
     assert src == expected, f"Expected full-size URL {expected!r}, got {src!r}"

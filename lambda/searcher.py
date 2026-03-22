@@ -20,6 +20,29 @@ def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
     return f"https://{thumbnail_bucket}.s3.amazonaws.com/{thumb_key}"
 
 
+def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str) -> list[dict]:
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "SELECT s3_key FROM photos WHERE bucket = %s ORDER BY id DESC",
+            (inbox_bucket,),
+        )
+        keys = [row[0] for row in cur.fetchall()]
+
+    results = []
+    for key in keys:
+        url = s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": inbox_bucket, "Key": key},
+            ExpiresIn=_PRESIGNED_URL_EXPIRY,
+        )
+        results.append({
+            "s3_key": key,
+            "url": url,
+            "thumbnail_url": _thumbnail_url(key, thumbnail_bucket),
+        })
+    return results
+
+
 def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
     with db_conn.cursor() as cur:
         cur.execute("SELECT name FROM tags ORDER BY RANDOM() LIMIT %s", (count,))

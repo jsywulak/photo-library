@@ -20,6 +20,7 @@ import boto3
 from behave import given, then, when
 
 from common import neon_conn
+from infrastructure_steps import assert_eventbridge_rule_targets_lambda
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
 
@@ -77,12 +78,20 @@ def step_function_active(context):
     )
 
 
+@then("an EventBridge rule should trigger the processor Lambda on S3 uploads to the photos bucket")
+def step_processor_eventbridge_rule(context):
+    assert_eventbridge_rule_targets_lambda(context.lambda_name, os.environ["S3_BUCKET"])
+
+
 @then("the photo should be stored in the Neon database")
 def step_photo_in_db(context):
     conn = neon_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM photos WHERE s3_key = %s", (context.test_s3_key,))
+            cur.execute(
+                "SELECT id FROM photos WHERE s3_key = %s AND bucket = %s",
+                (context.test_s3_key, context.test_s3_bucket),
+            )
             row = cur.fetchone()
         assert row, f"Photo {context.test_s3_key!r} not found in photos table"
         context.neon_photo_id = row[0]

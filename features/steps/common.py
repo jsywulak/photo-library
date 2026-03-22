@@ -10,21 +10,22 @@ def neon_conn():
     return psycopg2.connect(os.environ["NEON_DATABASE_URL"])
 
 
-def seed_photo(conn, s3_key, tags):
+def seed_photo(conn, s3_key, tags, bucket="photo-tagging-photos"):
     """Insert a photo and its tags. Does NOT commit — caller owns the transaction.
 
     Args:
         conn: psycopg2 connection
         s3_key: unique S3 key / filename for the photo
         tags: iterable of tag name strings (normalised to lowercase before insert)
+        bucket: source bucket name (defaults to 'photo-tagging-photos')
 
     Returns:
         The inserted photo id.
     """
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO photos (s3_key, processed_at) VALUES (%s, NOW()) RETURNING id",
-            (s3_key,),
+            "INSERT INTO photos (s3_key, bucket, processed_at) VALUES (%s, %s, NOW()) RETURNING id",
+            (s3_key, bucket),
         )
         photo_id = cur.fetchone()[0]
         for tag_name in tags:

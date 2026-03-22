@@ -63,3 +63,28 @@ Feature: Searcher Lambda
     And a thumbnail exists in the thumbnail bucket for that photo
     When the Lambda is invoked with tags "cat"
     Then each result should include a thumbnail_url
+
+  Scenario: GET /inbox returns photos from the inbox bucket
+    Given the searcher Lambda is deployed
+    And a photo is uploaded to the inbox bucket and recorded in the database
+    When the Function URL GET /inbox is called with the correct API key
+    Then the HTTP response status should be 200
+    And the response body should contain the inbox photo with a presigned URL
+
+  Scenario: GET /inbox includes a thumbnail_url for each result
+    Given the searcher Lambda is deployed
+    And a photo is uploaded to the inbox bucket and recorded in the database
+    When the Function URL GET /inbox is called with the correct API key
+    Then the HTTP response status should be 200
+    And each inbox result should include a thumbnail_url
+
+  Scenario: GET /inbox rejects requests with a wrong API key
+    Given the searcher Lambda is deployed
+    When the Function URL GET /inbox is called with an incorrect API key
+    Then the HTTP response status should be 401
+
+  Scenario: GET /inbox returns an empty list when the inbox bucket is empty
+    Given the searcher Lambda is deployed
+    When the Function URL GET /inbox is called with the correct API key
+    Then the HTTP response status should be 200
+    And the response body should be a list

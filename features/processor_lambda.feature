@@ -7,6 +7,10 @@ Feature: Processor Lambda
     Given the processor Lambda is deployed
     Then the function should be active
 
+  Scenario: Processor Lambda is triggered by S3 uploads via EventBridge
+    Given the processor Lambda is deployed
+    Then an EventBridge rule should trigger the processor Lambda on S3 uploads to the photos bucket
+
   Scenario: Processing a photo stores results in the database
     Given the processor Lambda is deployed
     And a test photo is uploaded to S3

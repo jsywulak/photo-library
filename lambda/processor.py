@@ -102,6 +102,9 @@ def _get_model() -> str:
     return os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL)
 
 
+_DEFAULT_BUCKET = "photo-tagging-photos"
+
+
 def _build_prompt() -> str:
     preferred = ", ".join(_PREFERRED_TAGS)
     return (
@@ -121,7 +124,7 @@ def _build_prompt() -> str:
     )
 
 
-def record_error(conn, s3_key: str, error: Exception) -> None:
+def record_error(conn, s3_key: str, error: Exception, bucket: str = _DEFAULT_BUCKET) -> None:
     """Best-effort write of a processing error to photos.last_error.
 
     Never raises — callers use this inside an except block and must not have
@@ -130,17 +133,27 @@ def record_error(conn, s3_key: str, error: Exception) -> None:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO photos (s3_key, last_error) VALUES (%s, %s) "
-                "ON CONFLICT (s3_key) DO UPDATE SET last_error = EXCLUDED.last_error",
-                (s3_key, str(error)),
+                "INSERT INTO photos (s3_key, bucket, last_error) VALUES (%s, %s, %s) "
+                "ON CONFLICT (s3_key, bucket) DO UPDATE SET last_error = EXCLUDED.last_error",
+                (s3_key, bucket, str(error)),
             )
         conn.commit()
     except Exception:
         pass
 
 
-def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> str:
-    """Process a single image. Returns 'processed', 'skipped', or 'unsupported'."""
+def process_one(
+    s3_key: str,
+    image_bytes: bytes,
+    db_conn,
+    anthropic_client,
+    bucket: str = _DEFAULT_BUCKET,
+) -> str:
+    """Process a single image. Returns 'processed', 'skipped', or 'unsupported'.
+
+    When bucket is the inbox bucket, only a DB record is inserted (no Anthropic
+    tagging). For the default photos bucket, full tagging is performed.
+    """
     if not s3_key.lower().endswith((".jpg", ".jpeg")):
         logger.info("Skipping unsupported file type: %s", s3_key)
         return "unsupported"
@@ -148,13 +161,17 @@ def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> s
     with db_conn.cursor() as cur:
         # Atomically claim the row. ON CONFLICT means it's already processed.
         cur.execute(
-            "INSERT INTO photos (s3_key) VALUES (%s) ON CONFLICT (s3_key) DO NOTHING RETURNING id",
-            (s3_key,),
+            "INSERT INTO photos (s3_key, bucket) VALUES (%s, %s)"
+            " ON CONFLICT (s3_key, bucket) DO NOTHING RETURNING id",
+            (s3_key, bucket),
         )
         row = cur.fetchone()
         if row is None:
             # Row already exists. Skip if successfully processed; retry if previously failed.
-            cur.execute("SELECT id, processed_at FROM photos WHERE s3_key = %s", (s3_key,))
+            cur.execute(
+                "SELECT id, processed_at FROM photos WHERE s3_key = %s AND bucket = %s",
+                (s3_key, bucket),
+            )
             existing = cur.fetchone()
             if existing[1] is not None:
                 return "skipped"
@@ -162,12 +179,13 @@ def process_one(s3_key: str, image_bytes: bytes, db_conn, anthropic_client) -> s
         else:
             photo_id = row[0]
 
-        try:
-            image_bytes = _prepare_image(image_bytes)
-            _tag_photo(cur, anthropic_client, photo_id, s3_key, image_bytes)
-        except Exception:
-            logger.exception("Failed to process image: %s", s3_key)
-            raise
+        if bucket == _DEFAULT_BUCKET:
+            try:
+                image_bytes = _prepare_image(image_bytes)
+                _tag_photo(cur, anthropic_client, photo_id, s3_key, image_bytes)
+            except Exception:
+                logger.exception("Failed to process image: %s", s3_key)
+                raise
 
     return "processed"
 
@@ -193,7 +211,8 @@ def _prepare_image(image_bytes: bytes) -> bytes:
             return buf.getvalue()
 
 
-def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: bytes) -> None:
+def get_tags_from_image(image_bytes: bytes, anthropic_client) -> list[str]:
+    """Call the Anthropic vision API and return a list of tags for the image."""
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     response = anthropic_client.messages.create(
@@ -230,14 +249,20 @@ def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: b
             f"Failed to parse Anthropic response as JSON: {e}\nRaw response: {text!r}"
         ) from e
 
+    tags = result.get("tags", [])
+    if not isinstance(tags, list):
+        raise ValueError(f"Expected 'tags' to be a list, got {type(tags)}: {tags!r}")
+
+    return tags
+
+
+def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: bytes) -> None:
+    tags = get_tags_from_image(image_bytes, anthropic_client)
+
     cur.execute(
         "UPDATE photos SET processed_at = NOW(), last_error = NULL WHERE id = %s",
         (photo_id,),
     )
-
-    tags = result.get("tags", [])
-    if not isinstance(tags, list):
-        raise ValueError(f"Expected 'tags' to be a list, got {type(tags)}: {tags!r}")
 
     for tag_name in tags:
         if not isinstance(tag_name, str):

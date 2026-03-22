@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Photo Tagger — Processor Lambda and photos S3 bucket
+Description: Photo Tagger — Processor Lambda
 
 Parameters:
   DeploymentBucket:
@@ -21,16 +21,15 @@ Parameters:
     NoEcho: true
     Description: Anthropic API key
 
-Resources:
   PhotosBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${AWS::StackName}-photos'
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: s3:ObjectCreated:*
-            Function: !GetAtt ProcessorFunction.Arn
+    Type: String
+    Description: S3 bucket the Lambda reads source photos from
 
+  InboxBucket:
+    Type: String
+    Description: S3 bucket for unprocessed inbox photos
+
+Resources:
   ProcessorRole:
     Type: AWS::IAM::Role
     Properties:
@@ -50,10 +49,14 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-photos/*'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PhotosBucket}/*'
+                  - !Sub 'arn:aws:s3:::${InboxBucket}/*'
               - Effect: Allow
                 Action: s3:ListBucket
-                Resource: !Sub 'arn:aws:s3:::${AWS::StackName}-photos'
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PhotosBucket}'
+                  - !Sub 'arn:aws:s3:::${InboxBucket}'
 
   ProcessorFunction:
     Type: AWS::Lambda::Function
@@ -73,19 +76,36 @@ Resources:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
 
-  ProcessorInvokePermission:
+  ProcessorEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref PhotosBucket
+              - !Ref InboxBucket
+      Targets:
+        - Id: ProcessorLambdaTarget
+          Arn: !GetAtt ProcessorFunction.Arn
+
+  ProcessorEventBridgePermission:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !GetAtt ProcessorFunction.Arn
       Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub 'arn:aws:s3:::${AWS::StackName}-photos'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ProcessorEventBridgeRule.Arn
 
 Outputs:
-  PhotosBucketName:
-    Description: S3 bucket for photos
-    Value: !Ref PhotosBucket
-
   ProcessorFunctionName:
     Description: Lambda function name (use as PROCESSOR_LAMBDA_NAME in .env)
     Value: !Ref ProcessorFunction
+
+  ProcessorFunctionArn:
+    Description: Lambda function ARN (used by photos-bucket stack for S3 notifications)
+    Value: !GetAtt ProcessorFunction.Arn

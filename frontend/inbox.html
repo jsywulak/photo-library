@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Tagger — Inbox</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #111;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #888;
+      text-transform: uppercase;
+    }
+
+    .status {
+      padding: 3rem 2rem;
+      text-align: center;
+      color: #333;
+      font-size: 0.875rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 3px;
+      padding: 2rem;
+    }
+
+    .grid-item {
+      aspect-ratio: 1;
+      overflow: hidden;
+      cursor: zoom-in;
+      background: #1a1a1a;
+    }
+
+    .grid-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+
+    .grid-item:hover img {
+      transform: scale(1.03);
+      opacity: 0.9;
+    }
+
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      cursor: zoom-out;
+    }
+
+    .lightbox.hidden { display: none; }
+
+    .lightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 2px;
+      cursor: default;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 1rem;
+      right: 1.25rem;
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 1.75rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .lightbox-close:hover { color: #ccc; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Photo Tagger — Inbox</h1>
+  </header>
+
+  <div id="status" class="status"></div>
+  <div id="photo-grid" class="grid"></div>
+
+  <div class="lightbox hidden" id="lightbox">
+    <button class="lightbox-close" id="lightbox-close">&times;</button>
+    <img id="lightbox-img" src="" alt="">
+  </div>
+
+  <script src="config.js"></script>
+  <script>
+    const status    = document.getElementById('status');
+    const grid      = document.getElementById('photo-grid');
+    const lightbox  = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightbox-img');
+
+    // ── Inbox load ────────────────────────────────────────────────────────────
+
+    async function loadInbox() {
+      try {
+        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + '/inbox', {
+          headers: { 'x-api-key': API_KEY },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const results = await res.json();
+        renderGrid(results);
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+      }
+    }
+
+    // ── Grid ──────────────────────────────────────────────────────────────────
+
+    function renderGrid(results) {
+      grid.innerHTML = '';
+
+      if (results.length === 0) {
+        status.textContent = 'No photos in inbox.';
+        return;
+      }
+
+      status.style.display = 'none';
+
+      results.forEach(result => {
+        const item = document.createElement('div');
+        item.className = 'grid-item';
+
+        const img = document.createElement('img');
+        img.src = result.thumbnail_url;
+        img.alt = result.s3_key;
+        img.loading = 'lazy';
+        img.addEventListener('click', () => openLightbox(result.url));
+
+        item.appendChild(img);
+        grid.appendChild(item);
+      });
+    }
+
+    // ── Lightbox ──────────────────────────────────────────────────────────────
+
+    function openLightbox(url) {
+      lightboxImg.src = url;
+      lightbox.classList.remove('hidden');
+    }
+
+    function closeLightbox() {
+      lightbox.classList.add('hidden');
+      lightboxImg.src = '';
+    }
+
+    lightbox.addEventListener('click', e => {
+      if (e.target === lightbox) closeLightbox();
+    });
+
+    document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeLightbox();
+    });
+
+    loadInbox();
+  </script>
+</body>
+</html>

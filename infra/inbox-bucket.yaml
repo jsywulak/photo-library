@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Inbox S3 bucket for unprocessed photos
+
+Parameters:
+  InboxBucketName:
+    Type: String
+    Default: photo-tagging-inbox
+    Description: Name of the S3 bucket for unprocessed photos
+
+Resources:
+  InboxBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref InboxBucketName
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+Outputs:
+  InboxBucketName:
+    Description: S3 bucket for unprocessed photos
+    Value: !Ref InboxBucket

@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails neon-tags neon-clean-tags neon-sync-check neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -27,7 +27,9 @@ help:
 	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-clean-tags  Remove tags with no associated photos"
 	@echo "  make neon-stats       Show photo/tag counts and top 5 tags"
-	@echo "  make neon-sync-check  Compare S3 listing vs DB (find unprocessed/orphaned)"
+	@echo "  make neon-sync-check        Compare S3 listing vs DB (find unprocessed/orphaned)"
+	@echo "  make neon-check-thumbnails        Report photos missing/orphaned thumbnails"
+	@echo "  make neon-clean-thumbnail-orphans Delete thumbnails with no matching photo"
 	@echo "  make neon-errors      List photos with processing errors"
 	@echo "  make neon-no-tags     List processed photos with no tags (silent failures)"
 	@echo "  make neon-reprocess-errors  Re-invoke processor Lambda for all errored photos"
@@ -35,7 +37,11 @@ help:
 	@echo "  make deploy-processor Build and deploy the processor Lambda"
 	@echo "  make deploy-searcher      Build and deploy the searcher Lambda"
 	@echo "  make deploy-thumbnailer   Build and deploy the thumbnailer Lambda"
-	@echo "  make backfill-thumbnails  Generate thumbnails for all processed photos"
+	@echo "  make backfill-thumbnails        Generate thumbnails for all processed photos"
+	@echo "  make backfill-inbox-thumbnails  Generate thumbnails for all inbox photos"
+	@echo "  make sync-inbox                 Re-trigger EventBridge for pre-existing inbox photos"
+	@echo "  make deploy-photos-bucket  Deploy the photos S3 bucket stack"
+	@echo "  make deploy-inbox-bucket   Deploy the inbox S3 bucket stack"
 	@echo "  make deploy-frontend  Upload frontend to S3"
 
 install: install-hooks
@@ -99,8 +105,20 @@ package-thumbnailer:
 deploy-thumbnailer: package-thumbnailer
 	@bash scripts/deploy-thumbnailer.sh
 
+deploy-photos-bucket:
+	@bash scripts/deploy-photos-bucket.sh
+
+deploy-inbox-bucket:
+	@bash scripts/deploy-inbox-bucket.sh
+
 deploy-frontend:
 	@bash scripts/deploy-frontend.sh
+
+neon-backup:
+	@mkdir -p backups
+	@file="backups/neon-$$(date +%Y%m%d-%H%M%S).sql.gz"; \
+	  set -o pipefail; /opt/homebrew/opt/postgresql@17/bin/pg_dump "$(NEON_DATABASE_URL)" | gzip > "$$file" \
+	  && echo "Backup written to $$file"
 
 neon-tags:
 	psql "$(NEON_DATABASE_URL)" -c 'SELECT name, COUNT(pt.photo_id) AS photo_count FROM tags JOIN photo_tags pt ON pt.tag_id = tags.id GROUP BY name ORDER BY photo_count DESC, name;'
@@ -114,11 +132,17 @@ neon-stats:
 neon-sync-check:
 	python scripts/sync_check.py
 
+neon-check-thumbnails:
+	python scripts/check_thumbnails.py
+
+neon-clean-thumbnail-orphans:
+	python scripts/clean_thumbnail_orphans.py
+
 neon-errors:
-	psql "$(NEON_DATABASE_URL)" -c 'SELECT s3_key, last_error FROM photos WHERE last_error IS NOT NULL ORDER BY s3_key;'
+	psql "$(NEON_DATABASE_URL)" -c 'SELECT bucket, s3_key, last_error FROM photos WHERE last_error IS NOT NULL ORDER BY bucket, s3_key;'
 
 neon-no-tags:
-	psql "$(NEON_DATABASE_URL)" -c 'SELECT p.s3_key, p.processed_at FROM photos p WHERE p.processed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM photo_tags pt WHERE pt.photo_id = p.id) ORDER BY p.processed_at;'
+	psql "$(NEON_DATABASE_URL)" -c 'SELECT p.bucket, p.s3_key, p.processed_at FROM photos p WHERE p.processed_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM photo_tags pt WHERE pt.photo_id = p.id) ORDER BY p.bucket, p.processed_at;'
 
 neon-reprocess-errors:
 	python scripts/reprocess_errors.py
@@ -128,6 +152,12 @@ neon-clean-orphans:
 
 backfill-thumbnails:
 	python scripts/backfill_thumbnails.py
+
+backfill-inbox-thumbnails:
+	python scripts/backfill_inbox_thumbnails.py
+
+sync-inbox:
+	python scripts/sync_inbox.py
 
 clean:
 	rm -rf dist/ lambda/__pycache__ db/__pycache__ scripts/__pycache__ features/__pycache__
