@@ -197,7 +197,8 @@ def step_grid_uses_thumbnail_url(context):
     img = context.page.locator(".grid-item img").first
     img.wait_for()
     src = img.get_attribute("src")
-    expected = context.mock_results[0]["thumbnail_url"]
+    results = getattr(context, "mock_inbox_results", None) or context.mock_results
+    expected = results[0]["thumbnail_url"]
     assert src == expected, f"Expected thumbnail URL {expected!r}, got {src!r}"
 
 
