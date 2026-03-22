@@ -7,9 +7,9 @@ Checks both the photos bucket and the inbox bucket separately.
 import os
 from pathlib import Path
 
-import boto3
-import psycopg2
 from dotenv import load_dotenv
+
+from helpers import db_connection, is_valid_image, list_s3_keys
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
@@ -20,23 +20,6 @@ NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
 # Safety floors — abort if S3 listing looks unexpectedly small.
 S3_COUNT_MINIMUM = 2000
 INBOX_COUNT_MINIMUM = 400
-
-
-def _is_valid_image(key: str) -> bool:
-    p = Path(key)
-    return p.name[:2] != "._" and p.suffix.lower() in (".jpg", ".jpeg")
-
-
-def list_s3_keys(bucket: str) -> set[str]:
-    s3 = boto3.client("s3")
-    keys = set()
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if _is_valid_image(key):
-                keys.add(key)
-    return keys
 
 
 def clean_orphans_for_bucket(conn, bucket: str, s3_keys: set[str]) -> int:
@@ -68,7 +51,7 @@ def clean_orphans_for_bucket(conn, bucket: str, s3_keys: set[str]) -> int:
 
 def main():
     print(f"Listing S3 objects in s3://{S3_BUCKET} ...", flush=True)
-    photos_keys = list_s3_keys(S3_BUCKET)
+    photos_keys = list_s3_keys(S3_BUCKET, filter_fn=is_valid_image)
     if len(photos_keys) < S3_COUNT_MINIMUM:
         raise SystemExit(
             f"Safety check failed: only {len(photos_keys)} images in s3://{S3_BUCKET} "
@@ -76,7 +59,7 @@ def main():
         )
 
     print(f"Listing S3 objects in s3://{INBOX_BUCKET} ...", flush=True)
-    inbox_keys = list_s3_keys(INBOX_BUCKET)
+    inbox_keys = list_s3_keys(INBOX_BUCKET, filter_fn=is_valid_image)
     if len(inbox_keys) < INBOX_COUNT_MINIMUM:
         raise SystemExit(
             f"Safety check failed: only {len(inbox_keys)} images in s3://{INBOX_BUCKET} "
@@ -84,14 +67,11 @@ def main():
         )
 
     print("Querying DB ...\n", flush=True)
-    conn = psycopg2.connect(NEON_DATABASE_URL)
-    try:
+    with db_connection(NEON_DATABASE_URL) as conn:
         total = 0
         total += clean_orphans_for_bucket(conn, S3_BUCKET, photos_keys)
         print()
         total += clean_orphans_for_bucket(conn, INBOX_BUCKET, inbox_keys)
-    finally:
-        conn.close()
 
     if total:
         print(f"\nTotal deleted: {total}. Run neon-clean-tags to remove any orphaned tags.")

@@ -15,35 +15,21 @@ Environment variables required:
 
 import json
 import logging
-import os
 
 import boto3
 import psycopg2
 
 from searcher import get_random_tags, list_inbox, search
+from utils import get_required_env
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-_DB_URL = os.environ.get("NEON_DATABASE_URL")
-if not _DB_URL:
-    raise RuntimeError("NEON_DATABASE_URL environment variable is not set")
-
-_API_KEY = os.environ.get("API_KEY")
-if not _API_KEY:
-    raise RuntimeError("API_KEY environment variable is not set")
-
-_S3_BUCKET = os.environ.get("S3_BUCKET")
-if not _S3_BUCKET:
-    raise RuntimeError("S3_BUCKET environment variable is not set")
-
-_THUMBNAIL_BUCKET = os.environ.get("THUMBNAIL_BUCKET")
-if not _THUMBNAIL_BUCKET:
-    raise RuntimeError("THUMBNAIL_BUCKET environment variable is not set")
-
-_INBOX_BUCKET = os.environ.get("INBOX_BUCKET")
-if not _INBOX_BUCKET:
-    raise RuntimeError("INBOX_BUCKET environment variable is not set")
+_DB_URL = get_required_env("NEON_DATABASE_URL")
+_API_KEY = get_required_env("API_KEY")
+_S3_BUCKET = get_required_env("S3_BUCKET")
+_THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
+_INBOX_BUCKET = get_required_env("INBOX_BUCKET")
 
 _s3_client = boto3.client("s3")
 

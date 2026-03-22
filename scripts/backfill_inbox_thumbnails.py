@@ -5,21 +5,23 @@ Invokes the thumbnailer Lambda synchronously for each s3_key in the inbox bucket
 passing source_bucket so the Lambda reads from the correct bucket.
 """
 
-import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import boto3
-import psycopg2
 from dotenv import load_dotenv
+
+from helpers import db_connection, invoke_lambda
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
 NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
 THUMBNAILER_LAMBDA_NAME = os.environ["THUMBNAILER_LAMBDA_NAME"]
 INBOX_BUCKET = os.environ["INBOX_BUCKET"]
+
+CONCURRENCY = 20
 
 
 def fetch_inbox_keys(conn, inbox_bucket: str) -> list[str]:
@@ -31,24 +33,15 @@ def fetch_inbox_keys(conn, inbox_bucket: str) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-CONCURRENCY = 20
-
-
 def run_inbox_backfill(s3_keys: list[str], inbox_bucket: str, lambda_client, lambda_name: str) -> dict:
-    """Invoke the thumbnailer Lambda for each inbox key. Returns thumbnailed/skipped counts."""
+    """Invoke the thumbnailer Lambda for each inbox key. Returns thumbnailed/skipped/failed counts."""
     thumbnailed = skipped = failed = 0
     lock = threading.Lock()
 
     def process(s3_key):
-        payload = json.dumps({"s3_key": s3_key, "source_bucket": inbox_bucket}).encode()
-        response = lambda_client.invoke(
-            FunctionName=lambda_name,
-            InvocationType="RequestResponse",
-            Payload=payload,
+        result = invoke_lambda(
+            lambda_client, lambda_name, {"s3_key": s3_key, "source_bucket": inbox_bucket}
         )
-        result = json.loads(response["Payload"].read())
-        if "FunctionError" in response:
-            raise RuntimeError(result.get("errorMessage", "unknown error"))
         return result.get("status")
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
@@ -73,11 +66,8 @@ def run_inbox_backfill(s3_keys: list[str], inbox_bucket: str, lambda_client, lam
 
 
 def main():
-    conn = psycopg2.connect(NEON_DATABASE_URL)
-    try:
+    with db_connection(NEON_DATABASE_URL) as conn:
         keys = fetch_inbox_keys(conn, INBOX_BUCKET)
-    finally:
-        conn.close()
 
     if not keys:
         print("No inbox photos found.")

@@ -1,8 +1,14 @@
 """Shared helpers for BDD step definitions."""
 
 import os
+from pathlib import Path
 
 import psycopg2
+
+
+def thumbnail_key(s3_key: str) -> str:
+    """Derive the thumbnail S3 key from a source s3_key."""
+    return f"thumbnails/{Path(s3_key).stem}.webp"
 
 
 def neon_conn():

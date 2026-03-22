@@ -8,22 +8,17 @@ Environment variables required:
 """
 
 import logging
-import os
 
 import boto3
 
 from thumbnailer import generate_thumbnail, thumbnail_key
+from utils import get_required_env
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-_SOURCE_BUCKET = os.environ.get("SOURCE_BUCKET")
-_THUMBNAIL_BUCKET = os.environ.get("THUMBNAIL_BUCKET")
-
-if not _SOURCE_BUCKET:
-    raise RuntimeError("SOURCE_BUCKET environment variable is not set")
-if not _THUMBNAIL_BUCKET:
-    raise RuntimeError("THUMBNAIL_BUCKET environment variable is not set")
+_SOURCE_BUCKET = get_required_env("SOURCE_BUCKET")
+_THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
 
 
 def _extract_bucket_key(event):

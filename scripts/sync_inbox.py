@@ -7,7 +7,6 @@ insert) and thumbnailer Lambda (thumbnail generation) directly for each one.
 Use this for photos that were uploaded before the EventBridge trigger was set up.
 """
 
-import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -15,6 +14,8 @@ from pathlib import Path
 
 import boto3
 from dotenv import load_dotenv
+
+from helpers import invoke_lambda, is_valid_image, list_s3_keys, make_s3_event
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
@@ -24,53 +25,15 @@ THUMBNAILER_LAMBDA_NAME = os.environ["THUMBNAILER_LAMBDA_NAME"]
 CONCURRENCY = 3
 
 
-def _is_valid_image(key: str) -> bool:
-    p = Path(key)
-    return p.name[:2] != "._" and p.suffix.lower() in (".jpg", ".jpeg")
-
-
-def list_inbox_keys(s3_client, bucket: str) -> list[str]:
-    keys = []
-    paginator = s3_client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if _is_valid_image(key):
-                keys.append(key)
-    return keys
-
-
-def _s3_payload(bucket: str, key: str) -> bytes:
-    return json.dumps({
-        "Records": [{"s3": {"bucket": {"name": bucket}, "object": {"key": key}}}]
-    }).encode()
-
-
 def sync(lam, bucket: str, keys: list[str]) -> dict:
     processed = thumbnailed = failed = 0
     lock = threading.Lock()
 
     def process(key):
-        payload = _s3_payload(bucket, key)
-
-        proc_resp = lam.invoke(
-            FunctionName=PROCESSOR_LAMBDA_NAME,
-            InvocationType="RequestResponse",
-            Payload=payload,
+        proc_result = invoke_lambda(lam, PROCESSOR_LAMBDA_NAME, make_s3_event(bucket, key))
+        thumb_result = invoke_lambda(
+            lam, THUMBNAILER_LAMBDA_NAME, {"s3_key": key, "source_bucket": bucket}
         )
-        proc_result = json.loads(proc_resp["Payload"].read())
-        if "FunctionError" in proc_resp:
-            raise RuntimeError(f"processor: {proc_result.get('errorMessage', proc_result)}")
-
-        thumb_resp = lam.invoke(
-            FunctionName=THUMBNAILER_LAMBDA_NAME,
-            InvocationType="RequestResponse",
-            Payload=json.dumps({"s3_key": key, "source_bucket": bucket}).encode(),
-        )
-        thumb_result = json.loads(thumb_resp["Payload"].read())
-        if "FunctionError" in thumb_resp:
-            raise RuntimeError(f"thumbnailer: {thumb_result.get('errorMessage', thumb_result)}")
-
         return proc_result.get("status"), thumb_result.get("status")
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
@@ -93,8 +56,7 @@ def sync(lam, bucket: str, keys: list[str]) -> dict:
 
 
 def main():
-    s3 = boto3.client("s3")
-    keys = list_inbox_keys(s3, INBOX_BUCKET)
+    keys = sorted(list_s3_keys(INBOX_BUCKET, filter_fn=is_valid_image))
 
     if not keys:
         print(f"No JPEGs found in s3://{INBOX_BUCKET}/")

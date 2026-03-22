@@ -7,31 +7,15 @@ Checks both the photos bucket and the inbox bucket separately.
 import os
 from pathlib import Path
 
-import boto3
-import psycopg2
 from dotenv import load_dotenv
+
+from helpers import db_connection, is_valid_image, list_s3_keys
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 INBOX_BUCKET = os.environ["INBOX_BUCKET"]
 NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
-
-def _is_valid_image(key: str) -> bool:
-    p = Path(key)
-    return p.name[:2] != "._" and p.suffix.lower() in (".jpg", ".jpeg")
-
-
-def list_s3_keys(bucket: str) -> set[str]:
-    s3 = boto3.client("s3")
-    keys = set()
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if _is_valid_image(key):
-                keys.add(key)
-    return keys
 
 
 def list_db_photos(conn, bucket: str) -> dict[str, dict]:
@@ -93,18 +77,15 @@ def report(label: str, s3_bucket: str, s3_keys: set[str], db_photos: dict[str, d
 
 def main():
     print(f"Listing S3 objects in s3://{S3_BUCKET} ...", flush=True)
-    photos_s3 = list_s3_keys(S3_BUCKET)
+    photos_s3 = list_s3_keys(S3_BUCKET, filter_fn=is_valid_image)
 
     print(f"Listing S3 objects in s3://{INBOX_BUCKET} ...", flush=True)
-    inbox_s3 = list_s3_keys(INBOX_BUCKET)
+    inbox_s3 = list_s3_keys(INBOX_BUCKET, filter_fn=is_valid_image)
 
     print("Querying DB ...", flush=True)
-    conn = psycopg2.connect(NEON_DATABASE_URL)
-    try:
+    with db_connection(NEON_DATABASE_URL) as conn:
         photos_db = list_db_photos(conn, S3_BUCKET)
         inbox_db = list_db_photos(conn, INBOX_BUCKET)
-    finally:
-        conn.close()
 
     print()
     report("PHOTOS BUCKET", S3_BUCKET, photos_s3, photos_db)

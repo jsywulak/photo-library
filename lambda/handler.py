@@ -8,20 +8,18 @@ Environment variables required:
 """
 
 import logging
-import os
 
 import anthropic
 import boto3
 import psycopg2
 
 from processor import process_one, record_error
+from utils import get_required_env
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-_DB_URL = os.environ.get("NEON_DATABASE_URL")
-if not _DB_URL:
-    raise RuntimeError("NEON_DATABASE_URL environment variable is not set")
+_DB_URL = get_required_env("NEON_DATABASE_URL")
 
 
 def _extract_bucket_key(event):

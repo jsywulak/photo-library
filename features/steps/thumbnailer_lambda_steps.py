@@ -21,15 +21,10 @@ import boto3
 from behave import given, then, when
 from PIL import Image
 
+from common import thumbnail_key as _thumbnail_key
 from infrastructure_steps import assert_eventbridge_rule_targets_lambda
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
-
-
-def _thumbnail_key(s3_key: str) -> str:
-    """Derive the thumbnail key from an s3_key."""
-    stem = Path(s3_key).stem
-    return f"thumbnails/{stem}.webp"
 
 
 @given("the thumbnailer Lambda is deployed")

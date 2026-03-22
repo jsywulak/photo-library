@@ -21,13 +21,9 @@ from behave import given, then, when
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "scripts"))
 
-from common import neon_conn, seed_photo
+from common import neon_conn, seed_photo, thumbnail_key as _thumbnail_key
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
-
-# Reuse the same thumbnail key derivation as the thumbnailer Lambda.
-def _thumbnail_key(s3_key: str) -> str:
-    return f"thumbnails/{Path(s3_key).stem}.webp"
 
 
 @given("a processed photo exists in the database and S3")

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Re-invoke the processor Lambda for all photos with last_error set."""
 
-import json
 import os
 from pathlib import Path
 
 import boto3
-import psycopg2
 from dotenv import load_dotenv
+
+from helpers import db_connection, invoke_lambda, make_s3_event
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
@@ -24,23 +24,9 @@ def fetch_errored(conn) -> list[tuple[str, str]]:
         return [(row[0], row[1]) for row in cur.fetchall()]
 
 
-def make_s3_event(bucket: str, key: str) -> dict:
-    return {
-        "Records": [{
-            "s3": {
-                "bucket": {"name": bucket},
-                "object": {"key": key},
-            }
-        }]
-    }
-
-
 def main():
-    conn = psycopg2.connect(NEON_DATABASE_URL)
-    try:
+    with db_connection(NEON_DATABASE_URL) as conn:
         errored = fetch_errored(conn)
-    finally:
-        conn.close()
 
     if not errored:
         print("No errored photos found.")
@@ -52,13 +38,8 @@ def main():
     invoked = failed = 0
 
     for key, bucket in errored:
-        payload = json.dumps(make_s3_event(bucket, key)).encode()
         try:
-            lam.invoke(
-                FunctionName=PROCESSOR_LAMBDA_NAME,
-                InvocationType="Event",  # async
-                Payload=payload,
-            )
+            invoke_lambda(lam, PROCESSOR_LAMBDA_NAME, make_s3_event(bucket, key), async_=True)
             print(f"  [queued] [{bucket}] {key}")
             invoked += 1
         except Exception as e:

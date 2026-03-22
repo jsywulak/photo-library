@@ -8,28 +8,14 @@
 import os
 from pathlib import Path
 
-import boto3
-import psycopg2
 from dotenv import load_dotenv
+
+from helpers import db_connection, list_s3_keys, thumbnail_key
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
 NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
 THUMBNAIL_BUCKET = os.environ["THUMBNAIL_BUCKET"]
-
-
-def thumbnail_key(s3_key: str) -> str:
-    return f"thumbnails/{Path(s3_key).stem}.webp"
-
-
-def list_thumbnail_keys(bucket: str) -> set[str]:
-    s3 = boto3.client("s3")
-    keys = set()
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix="thumbnails/"):
-        for obj in page.get("Contents", []):
-            keys.add(obj["Key"])
-    return keys
 
 
 def list_db_photos(conn) -> list[tuple[str, str]]:
@@ -41,14 +27,11 @@ def list_db_photos(conn) -> list[tuple[str, str]]:
 
 def main():
     print(f"Listing thumbnails in s3://{THUMBNAIL_BUCKET} ...", flush=True)
-    existing_thumbs = list_thumbnail_keys(THUMBNAIL_BUCKET)
+    existing_thumbs = list_s3_keys(THUMBNAIL_BUCKET, prefix="thumbnails/")
 
     print("Querying DB ...", flush=True)
-    conn = psycopg2.connect(NEON_DATABASE_URL)
-    try:
+    with db_connection(NEON_DATABASE_URL) as conn:
         photos = list_db_photos(conn)
-    finally:
-        conn.close()
 
     # Photos missing a thumbnail
     missing = [

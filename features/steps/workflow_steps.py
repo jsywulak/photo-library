@@ -23,13 +23,9 @@ from botocore.exceptions import ClientError
 import psycopg2
 from behave import given, then
 
-from common import neon_conn
+from common import neon_conn, thumbnail_key as _thumbnail_key
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
-
-
-def _thumbnail_key(s3_key: str) -> str:
-    return f"thumbnails/{Path(s3_key).stem}.webp"
 
 
 @given("a photo is uploaded to the photos bucket")

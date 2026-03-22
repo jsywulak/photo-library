@@ -9,15 +9,14 @@ Each result includes:
   - thumbnail_url: a public URL to the WebP thumbnail in the thumbnail bucket
 """
 
-from pathlib import Path
+from thumbnailer import thumbnail_key as _thumbnail_key
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
 
 
 def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
-    thumb_key = f"thumbnails/{Path(s3_key).stem}.webp"
-    return f"https://{thumbnail_bucket}.s3.amazonaws.com/{thumb_key}"
+    return f"https://{thumbnail_bucket}.s3.amazonaws.com/{_thumbnail_key(s3_key)}"
 
 
 def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str) -> list[dict]:
