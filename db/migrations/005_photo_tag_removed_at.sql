@@ -1,0 +1,1 @@
+ALTER TABLE photo_tags ADD COLUMN removed_at TIMESTAMPTZ;
