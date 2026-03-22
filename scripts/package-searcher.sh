@@ -15,7 +15,7 @@ pip install -r requirements-searcher-lambda.txt \
   --quiet
 
 echo "Copying Lambda code..."
-cp lambda/searcher_handler.py lambda/searcher.py "$BUILD_DIR"
+cp lambda/searcher_handler.py lambda/searcher.py lambda/thumbnailer.py lambda/utils.py "$BUILD_DIR"
 
 echo "Zipping..."
 (cd "$BUILD_DIR" && zip -qr - . ) > dist/searcher.zip

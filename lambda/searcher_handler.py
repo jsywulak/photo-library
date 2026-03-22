@@ -18,6 +18,7 @@ import logging
 
 import boto3
 import psycopg2
+from botocore.config import Config
 
 from searcher import get_random_tags, list_inbox, search
 from utils import get_required_env
@@ -31,7 +32,7 @@ _S3_BUCKET = get_required_env("S3_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
 _INBOX_BUCKET = get_required_env("INBOX_BUCKET")
 
-_s3_client = boto3.client("s3")
+_s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",

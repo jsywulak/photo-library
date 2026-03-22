@@ -15,7 +15,7 @@ pip install -r requirements-processor-lambda.txt \
   --quiet
 
 echo "Copying Lambda code..."
-cp lambda/handler.py lambda/processor.py "$BUILD_DIR"
+cp lambda/handler.py lambda/processor.py lambda/utils.py "$BUILD_DIR"
 
 echo "Zipping..."
 (cd "$BUILD_DIR" && zip -qr - . ) > dist/processor.zip

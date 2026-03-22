@@ -157,12 +157,38 @@
 
     .lightbox.hidden { display: none; }
 
+    .lightbox-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: default;
+    }
+
     .lightbox img {
       max-width: 90vw;
-      max-height: 90vh;
+      max-height: 82vh;
       object-fit: contain;
       border-radius: 2px;
       cursor: default;
+    }
+
+    .lightbox-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.375rem;
+      justify-content: center;
+      max-width: 90vw;
+    }
+
+    .lightbox-tag {
+      background: none;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      color: #666;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      white-space: nowrap;
     }
 
     .lightbox-close {
@@ -199,7 +225,10 @@
 
   <div class="lightbox hidden" id="lightbox">
     <button class="lightbox-close" id="lightbox-close">&times;</button>
-    <img id="lightbox-img" src="" alt="">
+    <div class="lightbox-content">
+      <img id="lightbox-img" src="" alt="">
+      <div id="lightbox-tags" class="lightbox-tags"></div>
+    </div>
   </div>
 
   <script src="config.js"></script>
@@ -209,8 +238,9 @@
     const status      = document.getElementById('status');
     const grid        = document.getElementById('grid');
     const suggestions = document.getElementById('suggestions');
-    const lightbox    = document.getElementById('lightbox');
-    const lightboxImg = document.getElementById('lightbox-img');
+    const lightbox     = document.getElementById('lightbox');
+    const lightboxImg  = document.getElementById('lightbox-img');
+    const lightboxTags = document.getElementById('lightbox-tags');
 
     let tags = [];
     let debounceTimer = null;
@@ -350,7 +380,7 @@
         img.src = result.thumbnail_url;
         img.alt = result.s3_key;
         img.loading = 'lazy';
-        img.addEventListener('click', () => openLightbox(result.url));
+        img.addEventListener('click', () => openLightbox(result.url, result.tags || []));
 
         item.appendChild(img);
         grid.appendChild(item);
@@ -359,8 +389,15 @@
 
     // ── Lightbox ──────────────────────────────────────────────────────────────
 
-    function openLightbox(url) {
+    function openLightbox(url, tags) {
       lightboxImg.src = url;
+      lightboxTags.innerHTML = '';
+      (tags || []).forEach(tag => {
+        const span = document.createElement('span');
+        span.className = 'lightbox-tag';
+        span.textContent = tag;
+        lightboxTags.appendChild(span);
+      });
       lightbox.classList.remove('hidden');
     }
 

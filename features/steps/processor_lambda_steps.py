@@ -19,7 +19,7 @@ from pathlib import Path
 import boto3
 from behave import given, then, when
 
-from common import neon_conn
+from common import neon_conn, thumbnail_key
 from infrastructure_steps import assert_eventbridge_rule_targets_lambda
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
@@ -47,6 +47,8 @@ def step_upload_test_photo(context):
     boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
     context.test_s3_key = s3_key
     context.test_s3_bucket = bucket
+    context.test_thumbnail_key = thumbnail_key(s3_key)
+    context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
 
 
 @when("the Lambda processes the photo")

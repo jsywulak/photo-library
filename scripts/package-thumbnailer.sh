@@ -15,7 +15,7 @@ pip install -r requirements-thumbnailer-lambda.txt \
   --quiet
 
 echo "Copying Lambda code..."
-cp lambda/thumbnailer.py lambda/thumbnailer_handler.py "$BUILD_DIR"
+cp lambda/thumbnailer.py lambda/thumbnailer_handler.py lambda/utils.py "$BUILD_DIR"
 
 echo "Zipping..."
 (cd "$BUILD_DIR" && zip -qr - . ) > dist/thumbnailer.zip

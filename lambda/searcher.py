@@ -9,7 +9,7 @@ Each result includes:
   - thumbnail_url: a public URL to the WebP thumbnail in the thumbnail bucket
 """
 
-from thumbnailer import thumbnail_key as _thumbnail_key
+from utils import thumbnail_key as _thumbnail_key
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
@@ -53,21 +53,23 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbna
     with db_conn.cursor() as cur:
         cur.execute(
             """
-            SELECT p.s3_key, COUNT(pt.tag_id) AS match_count
+            SELECT p.s3_key,
+                   COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) AS match_count,
+                   array_agg(t.name ORDER BY t.name) AS tags
             FROM photos p
             JOIN photo_tags pt ON pt.photo_id = p.id
             JOIN tags t        ON t.id = pt.tag_id
-            WHERE t.name = ANY(%s)
             GROUP BY p.id, p.s3_key
+            HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
             ORDER BY match_count DESC
             """,
-            (normalised,),
+            (normalised, normalised),
         )
         rows = cur.fetchall()
 
     results = []
     for row in rows:
-        entry = {"s3_key": row[0], "match_count": row[1]}
+        entry = {"s3_key": row[0], "match_count": row[1], "tags": row[2]}
         if s3_client and bucket:
             entry["url"] = s3_client.generate_presigned_url(
                 "get_object",

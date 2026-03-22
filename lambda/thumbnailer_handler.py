@@ -11,7 +11,8 @@ import logging
 
 import boto3
 
-from thumbnailer import generate_thumbnail, thumbnail_key
+from thumbnailer import generate_thumbnail
+from utils import thumbnail_key
 from utils import get_required_env
 
 logger = logging.getLogger()

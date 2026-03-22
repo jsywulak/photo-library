@@ -46,6 +46,7 @@ def step_search_returns_n(context, n):
             "s3_key": f"photo_{i}.jpg",
             "url": f"https://presigned.example.com/photo_{i}.jpg",
             "thumbnail_url": f"https://thumbnails.example.com/thumbnails/photo_{i}.webp",
+            "tags": ["floral", "outdoor"],
         }
         for i in range(n)
     ]
@@ -208,3 +209,11 @@ def step_lightbox_shows_full_url(context):
     results = context.mock_results or context.mock_inbox_results
     expected = results[0]["url"]
     assert src == expected, f"Expected full-size URL {expected!r}, got {src!r}"
+
+
+@then("the lightbox shows the photo's tags")
+def step_lightbox_shows_tags(context):
+    tags = context.mock_results[0]["tags"]
+    for tag in tags:
+        locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
+        assert locator.count() > 0, f"Tag {tag!r} not found in lightbox"

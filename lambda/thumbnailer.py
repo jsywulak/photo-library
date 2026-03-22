@@ -8,20 +8,16 @@ thumbnail already exists. The caller is responsible for passing an S3 client.
 
 import io
 import logging
-from pathlib import Path
 
 from botocore.exceptions import ClientError
 from PIL import Image, ImageOps
+
+from utils import thumbnail_key
 
 logger = logging.getLogger(__name__)
 
 THUMBNAIL_SIZE = (400, 400)
 THUMBNAIL_QUALITY = 85
-
-
-def thumbnail_key(s3_key: str) -> str:
-    """Derive the thumbnail S3 key from the source s3_key."""
-    return f"thumbnails/{Path(s3_key).stem}.webp"
 
 
 def generate_thumbnail(s3_key: str, source_bucket: str, thumbnail_bucket: str, s3_client) -> str:

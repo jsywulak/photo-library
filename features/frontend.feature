@@ -60,6 +60,13 @@ Feature: Frontend UI
     Then the lightbox is visible
     And the lightbox shows the full-size URL
 
+  Scenario: Lightbox shows the photo's tags
+    Given the search API returns 1 result
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    Then the lightbox shows the photo's tags
+
   Scenario: Closing the lightbox with the × button
     Given the search API returns 1 result
     When I open the frontend
