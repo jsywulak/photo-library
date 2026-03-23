@@ -266,10 +266,46 @@ Four new `make` targets for ongoing DB/S3 health checks:
 - `features/searcher_lambda.feature` — added scenario asserting `thumbnail_url` in search results
 - `features/frontend.feature` — added scenarios asserting grid uses thumbnail URL and lightbox uses full-size URL
 
-  Current session                                                              
-  ██████████▌                                        21% used 
-  Resets 12am (America/New_York)                                                 
+### Usage
+
+  Current session
+  ██████████▌                                        21% used
+  Resets 12am (America/New_York)
 
   Current week (all models)
   ██████                                             12% used
+  Resets Mar 25 at 6pm (America/New_York)
+
+## Session — 2026-03-22
+
+### Infrastructure / packaging fixes
+- All three Lambda packages were missing `lambda/utils.py` from their zips, causing runtime import errors on cold start
+- `thumbnail_key` moved into `lambda/utils.py` (dependency-free) to break a circular import — `searcher.py` was pulling in `thumbnailer.py` which imports PIL, not available in the searcher package
+- S3 client in the searcher Lambda switched to SigV4 presigned URLs — SigV2 mishandles STS session token characters, causing 403s on certain images
+- `scripts/utils.py` renamed to `scripts/helpers.py` to avoid a `sys.modules` collision when Lambda and script code are both loaded in the same Python process during BDD tests
+
+### Lightbox tag display
+- Search query updated to return all tags per photo via `array_agg` alongside the match count
+- Lightbox redesigned to show photo tags as styled chips below the image, matching the aesthetic of the search suggestion chips
+- BDD scenario and Playwright step added to verify tags appear in the lightbox
+
+### Processor Lambda test cleanup
+- `step_upload_test_photo` now sets `context.test_thumbnail_key` and `context.test_thumbnail_bucket` so the EventBridge-triggered thumbnail gets deleted in `after_scenario`, not just the source photo and Neon record
+- Diagnosed an orphaned Neon record (`test-71ef7c31-PXL_20260319_193406856.webp`) left by prior test runs that weren't cleaning up thumbnails; removed it manually
+
+### Tag management (new feature)
+- Migration 005: added `removed_at TIMESTAMPTZ` to `photo_tags` for logical tag removal — NULL means active, non-null means removed; existing rows unaffected
+- `POST /remove-tag` endpoint in the searcher Lambda — sets `removed_at`; removed tags are excluded from search ranking and the per-photo tags list
+- `POST /add-tags` endpoint — accepts `s3_key` and a list of tags; creates tags if they don't exist, restores previously-removed associations, returns 404 if photo not found
+- Lightbox × button on each tag chip calls `/remove-tag` and removes the chip from the DOM
+- "Add tag..." chip at the end of the tag list expands into a text input on click; Enter calls `/add-tags` and renders the new chip inline; Escape cancels
+- Full BDD coverage: `photo_search.feature` (unit-level, local DB) and `searcher_lambda.feature` (infrastructure, live Lambda) for both endpoints; three new Playwright scenarios for the add-tag UI
+
+### Usage
+  Current session                                                                                                                                                                              
+  ███                                                6% used                                                                
+  Resets 3am (America/New_York)                                                                                                                                                                
+                                                                                                                                                                                                 
+  Current week (all models)
+  ██████████                                         20% used
   Resets Mar 25 at 6pm (America/New_York)
