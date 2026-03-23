@@ -43,6 +43,11 @@ def step_remove_tag_api_accepts(context):
     pass  # handled unconditionally in the lambda route mock
 
 
+@given("the add-tags API accepts requests")
+def step_add_tags_api_accepts(context):
+    pass  # handled unconditionally in the lambda route mock
+
+
 @given("the search API returns {n:d} result")
 @given("the search API returns {n:d} results")
 def step_search_returns_n(context, n):
@@ -93,6 +98,12 @@ def step_open_frontend(context):
                 status=200,
                 content_type="application/json",
                 body=json.dumps({"removed": True}),
+            )
+        elif "/add-tags" in request.url:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"added": 1}),
             )
         else:
             route.fulfill(
@@ -240,3 +251,30 @@ def step_click_remove_lightbox_tag(context, tag):
 def step_tag_not_in_lightbox(context, tag):
     locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
     assert locator.count() == 0, f"Expected tag {tag!r} to be gone from lightbox"
+
+
+@then('the lightbox shows an "Add tag..." chip')
+def step_lightbox_shows_add_tag_chip(context):
+    context.page.locator("#lightbox-tags .add-tag-chip").wait_for()
+
+
+@when('I click the "Add tag..." chip in the lightbox')
+def step_click_add_tag_chip(context):
+    context.page.locator("#lightbox-tags .add-tag-chip").click()
+
+
+@then("a tag input field is visible in the lightbox")
+def step_tag_input_visible(context):
+    context.page.locator("#lightbox-tags .lightbox-tag-input").wait_for(state="visible")
+
+
+@when('I type "{tag}" in the lightbox tag input and press Enter')
+def step_type_lightbox_tag_enter(context, tag):
+    context.page.locator("#lightbox-tags .lightbox-tag-input").fill(tag)
+    context.page.keyboard.press("Enter")
+    context.page.wait_for_timeout(300)
+
+
+@then('"{tag}" is shown as a tag in the lightbox')
+def step_tag_shown_in_lightbox(context, tag):
+    context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')").wait_for()

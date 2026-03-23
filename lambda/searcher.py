@@ -48,6 +48,46 @@ def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
+def add_tags(s3_key: str, tags: list[str], db_conn) -> int | None:
+    """Add tags to a photo, creating them if needed and restoring any that were removed.
+
+    Returns the number of associations added or restored, or None if the photo was not found.
+    """
+    normalised = [t.strip().lower() for t in tags if t.strip()]
+    if not normalised:
+        return 0
+
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT id FROM photos WHERE s3_key = %s", (s3_key,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        photo_id = row[0]
+
+        count = 0
+        for tag_name in normalised:
+            cur.execute(
+                """
+                INSERT INTO tags (name) VALUES (%s)
+                ON CONFLICT (LOWER(name)) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """,
+                (tag_name,),
+            )
+            tag_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO photo_tags (photo_id, tag_id)
+                VALUES (%s, %s)
+                ON CONFLICT (photo_id, tag_id) DO UPDATE SET removed_at = NULL
+                """,
+                (photo_id, tag_id),
+            )
+            count += cur.rowcount
+
+    return count
+
+
 def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
     """Logically remove a tag from a photo. Returns True if the association was found and updated."""
     normalised = tag.strip().lower()

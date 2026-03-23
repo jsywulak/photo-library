@@ -89,6 +89,28 @@ Feature: Searcher Lambda
     Then the HTTP response status should be 200
     And the response body should be a list
 
+  Scenario: POST /add-tags adds new tags to a photo
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "animal"
+    When the Function URL POST /add-tags is called for the photo with tags "indoor, cozy" and the correct API key
+    Then the HTTP response status should be 200
+    And searching for "indoor" via the Lambda should return the photo
+
+  Scenario: POST /add-tags restores a previously removed tag
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "cat, animal"
+    When the Function URL POST /remove-tag is called for the photo with tag "cat" and the correct API key
+    Then the HTTP response status should be 200
+    And searching for "cat" via the Lambda should not return the photo
+    When the Function URL POST /add-tags is called for the photo with tags "cat" and the correct API key
+    Then the HTTP response status should be 200
+    And searching for "cat" via the Lambda should still return the photo
+
+  Scenario: POST /add-tags rejects requests with a wrong API key
+    Given the searcher Lambda is deployed
+    When the Function URL POST /add-tags is called with an incorrect API key
+    Then the HTTP response status should be 401
+
   Scenario: POST /remove-tag logically removes a tag from a photo
     Given the searcher Lambda is deployed
     And a photo exists in the Neon database tagged with "cat, animal"

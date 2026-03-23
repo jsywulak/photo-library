@@ -67,6 +67,31 @@ Feature: Frontend UI
     And I click the first photo
     Then the lightbox shows the photo's tags
 
+  Scenario: Lightbox shows an "Add tag..." chip
+    Given the search API returns 1 result
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    Then the lightbox shows an "Add tag..." chip
+
+  Scenario: Clicking "Add tag..." turns it into a text input
+    Given the search API returns 1 result
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    And I click the "Add tag..." chip in the lightbox
+    Then a tag input field is visible in the lightbox
+
+  Scenario: Typing a tag in the lightbox and pressing Enter adds it
+    Given the search API returns 1 result
+    And the add-tags API accepts requests
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    And I click the "Add tag..." chip in the lightbox
+    And I type "roses" in the lightbox tag input and press Enter
+    Then "roses" is shown as a tag in the lightbox
+
   Scenario: Clicking remove on a lightbox tag removes it
     Given the search API returns 1 result
     And the remove-tag API accepts requests

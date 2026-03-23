@@ -208,6 +208,28 @@
       color: #ccc;
     }
 
+    .add-tag-chip {
+      color: #444;
+      cursor: pointer;
+      font-style: italic;
+    }
+
+    .add-tag-chip:hover {
+      border-color: #444;
+      color: #888;
+    }
+
+    .lightbox-tag-input {
+      background: none;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #ccc;
+      font-size: 0.75rem;
+      outline: none;
+      padding: 0.2rem 0.5rem;
+      width: 7rem;
+    }
+
     .lightbox-close {
       position: absolute;
       top: 1rem;
@@ -406,30 +428,72 @@
 
     // ── Lightbox ──────────────────────────────────────────────────────────────
 
+    function createTagChip(tag, s3Key) {
+      const span = document.createElement('span');
+      span.className = 'lightbox-tag';
+      span.textContent = tag;
+
+      const btn = document.createElement('button');
+      btn.textContent = '×';
+      btn.setAttribute('aria-label', `Remove tag ${tag}`);
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await fetch(`${SEARCHER_URL}/remove-tag`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({ s3_key: s3Key, tag }),
+        });
+        span.remove();
+      });
+
+      span.appendChild(btn);
+      return span;
+    }
+
+    function createAddTagChip(s3Key) {
+      const chip = document.createElement('span');
+      chip.className = 'lightbox-tag add-tag-chip';
+      chip.textContent = 'Add tag...';
+
+      chip.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'lightbox-tag-input';
+        input.placeholder = 'tag name';
+
+        input.addEventListener('keydown', async (e) => {
+          if (e.key === 'Enter') {
+            const tag = input.value.trim();
+            if (!tag) return;
+            const newChip = createTagChip(tag, s3Key);
+            input.replaceWith(chip);
+            lightboxTags.insertBefore(newChip, chip);
+            fetch(`${SEARCHER_URL}/add-tags`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+              body: JSON.stringify({ s3_key: s3Key, tags: [tag] }),
+            });
+          } else if (e.key === 'Escape') {
+            input.replaceWith(chip);
+          }
+        });
+
+        input.addEventListener('blur', () => {
+          setTimeout(() => { if (input.parentElement) input.replaceWith(chip); }, 150);
+        });
+
+        chip.replaceWith(input);
+        input.focus();
+      });
+
+      return chip;
+    }
+
     function openLightbox(url, s3Key, tags) {
       lightboxImg.src = url;
       lightboxTags.innerHTML = '';
-      (tags || []).forEach(tag => {
-        const span = document.createElement('span');
-        span.className = 'lightbox-tag';
-        span.textContent = tag;
-
-        const btn = document.createElement('button');
-        btn.textContent = '×';
-        btn.setAttribute('aria-label', `Remove tag ${tag}`);
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await fetch(`${SEARCHER_URL}/remove-tag`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
-            body: JSON.stringify({ s3_key: s3Key, tag }),
-          });
-          span.remove();
-        });
-
-        span.appendChild(btn);
-        lightboxTags.appendChild(span);
-      });
+      (tags || []).forEach(tag => lightboxTags.appendChild(createTagChip(tag, s3Key)));
+      lightboxTags.appendChild(createAddTagChip(s3Key));
       lightbox.classList.remove('hidden');
     }
 

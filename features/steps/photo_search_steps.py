@@ -31,6 +31,13 @@ def step_seed_photo(context, s3_key, tags):
 # When
 # ---------------------------------------------------------------------------
 
+@given('the tag "{tag}" is added to "{s3_key}"')
+@when('the tag "{tag}" is added to "{s3_key}"')
+def step_add_tag(context, tag, s3_key):
+    import searcher
+    searcher.add_tags(s3_key, [tag], context.conn)
+
+
 @given('the tag "{tag}" is removed from "{s3_key}"')
 def step_remove_tag(context, tag, s3_key):
     import searcher

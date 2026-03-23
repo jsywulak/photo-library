@@ -34,6 +34,23 @@ Feature: Photo search by tags
     Then the results should contain "cat.jpg"
     And the results should not contain "landscape.jpg"
 
+  Scenario: Added tag makes photo appear in search results
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "animal"
+    And the tag "indoor" is added to "cat.jpg"
+    When I search for "indoor"
+    Then the results should contain "cat.jpg"
+
+  Scenario: Adding a tag that was previously removed restores it
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "cat, animal"
+    And the tag "cat" is removed from "cat.jpg"
+    When I search for "cat"
+    Then the results should not contain "cat.jpg"
+    When the tag "cat" is added to "cat.jpg"
+    And I search for "cat"
+    Then the results should contain "cat.jpg"
+
   Scenario: Removed tag is excluded from search results
     Given the database is empty
     And a photo "cat.jpg" tagged with "cat, animal"
