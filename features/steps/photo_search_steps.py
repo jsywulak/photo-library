@@ -31,6 +31,12 @@ def step_seed_photo(context, s3_key, tags):
 # When
 # ---------------------------------------------------------------------------
 
+@given('the tag "{tag}" is removed from "{s3_key}"')
+def step_remove_tag(context, tag, s3_key):
+    import searcher
+    searcher.remove_tag(s3_key, tag, context.conn)
+
+
 @when('I search for "{tags}"')
 def step_search(context, tags):
     import searcher
@@ -58,6 +64,15 @@ def step_results_contain(context, s3_key):
 def step_results_not_contain(context, s3_key):
     keys = [r["s3_key"] for r in context.results]
     assert s3_key not in keys, f"Expected {s3_key!r} absent from results, got: {keys}"
+
+
+@then('the results for "{s3_key}" should not include the tag "{tag}"')
+def step_result_tags_exclude(context, s3_key, tag):
+    result = next((r for r in context.results if r["s3_key"] == s3_key), None)
+    assert result is not None, f"{s3_key!r} not found in results"
+    assert tag not in result.get("tags", []), (
+        f"Expected tag {tag!r} to be absent from {s3_key!r} tags, got: {result['tags']}"
+    )
 
 
 @then('"{higher}" should rank above "{lower}"')

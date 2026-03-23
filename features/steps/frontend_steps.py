@@ -38,6 +38,11 @@ def step_tags_returns(context, tags_json):
     context.mock_tags = json.loads(tags_json)
 
 
+@given("the remove-tag API accepts requests")
+def step_remove_tag_api_accepts(context):
+    pass  # handled unconditionally in the lambda route mock
+
+
 @given("the search API returns {n:d} result")
 @given("the search API returns {n:d} results")
 def step_search_returns_n(context, n):
@@ -82,6 +87,12 @@ def step_open_frontend(context):
                 status=200,
                 content_type="application/json",
                 body=json.dumps(context.mock_tags),
+            )
+        elif "/remove-tag" in request.url:
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"removed": True}),
             )
         else:
             route.fulfill(
@@ -217,3 +228,15 @@ def step_lightbox_shows_tags(context):
     for tag in tags:
         locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
         assert locator.count() > 0, f"Tag {tag!r} not found in lightbox"
+
+
+@when('I click remove on the "{tag}" lightbox tag')
+def step_click_remove_lightbox_tag(context, tag):
+    context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}') button").click()
+    context.page.wait_for_timeout(300)
+
+
+@then('the "{tag}" tag is no longer shown in the lightbox')
+def step_tag_not_in_lightbox(context, tag):
+    locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
+    assert locator.count() == 0, f"Expected tag {tag!r} to be gone from lightbox"

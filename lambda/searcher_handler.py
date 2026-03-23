@@ -20,7 +20,7 @@ import boto3
 import psycopg2
 from botocore.config import Config
 
-from searcher import get_random_tags, list_inbox, search
+from searcher import get_random_tags, list_inbox, remove_tag, search
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -75,6 +75,23 @@ def lambda_handler(event, context):
             conn = psycopg2.connect(_DB_URL, connect_timeout=10)
             try:
                 return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET))
+            finally:
+                conn.close()
+
+        if method == "POST" and path == "/remove-tag":
+            try:
+                payload = json.loads(event.get("body") or "{}")
+            except json.JSONDecodeError:
+                return _http_response(400, {"error": "Invalid JSON body"})
+            s3_key = payload.get("s3_key")
+            tag = payload.get("tag")
+            if not s3_key or not tag:
+                return _http_response(400, {"error": "s3_key and tag are required"})
+            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+            try:
+                found = remove_tag(s3_key, tag, conn)
+                conn.commit()
+                return _http_response(200, {"removed": found})
             finally:
                 conn.close()
 

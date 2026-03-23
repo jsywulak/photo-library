@@ -48,6 +48,27 @@ def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
+def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
+    """Logically remove a tag from a photo. Returns True if the association was found and updated."""
+    normalised = tag.strip().lower()
+    with db_conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE photo_tags pt
+            SET removed_at = NOW()
+            FROM photos p, tags t
+            WHERE pt.photo_id = p.id
+              AND pt.tag_id = t.id
+              AND p.s3_key = %s
+              AND t.name = %s
+              AND pt.removed_at IS NULL
+            """,
+            (s3_key, normalised),
+        )
+        updated = cur.rowcount
+    return updated > 0
+
+
 def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None) -> list[dict]:
     normalised = [t.strip().lower() for t in tags]
     with db_conn.cursor() as cur:
@@ -57,7 +78,7 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbna
                    COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) AS match_count,
                    array_agg(t.name ORDER BY t.name) AS tags
             FROM photos p
-            JOIN photo_tags pt ON pt.photo_id = p.id
+            JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
             JOIN tags t        ON t.id = pt.tag_id
             GROUP BY p.id, p.s3_key
             HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0

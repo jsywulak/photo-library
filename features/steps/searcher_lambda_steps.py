@@ -357,6 +357,68 @@ def step_response_is_list(context):
     )
 
 
+@when('the Function URL POST /remove-tag is called for the photo with tag "{tag}" and the correct API key')
+def step_remove_tag_correct_key(context, tag):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/remove-tag"
+    api_key = os.environ["API_KEY"]
+    body = json.dumps({"s3_key": context.last_photo_key, "tag": tag}).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": api_key},
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+    context.removed_tag = tag
+
+
+@when("the Function URL POST /remove-tag is called with an incorrect API key")
+def step_remove_tag_wrong_key(context):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + "/remove-tag"
+    body = json.dumps({"s3_key": "dummy.jpg", "tag": "cat"}).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": "wrong-key"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
+@then('searching for "{tag}" via the Lambda should not return the photo')
+def step_lambda_search_excludes_photo(context, tag):
+    client = boto3.client("lambda")
+    response = client.invoke(
+        FunctionName=context.searcher_lambda_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"tags": [tag]}),
+    )
+    results = json.loads(response["Payload"].read())
+    result_keys = {r["s3_key"] for r in results}
+    assert context.last_photo_key not in result_keys, (
+        f"Expected {context.last_photo_key!r} to be absent after tag removal, got: {result_keys}"
+    )
+
+
+@then('searching for "{tag}" via the Lambda should still return the photo')
+def step_lambda_search_includes_photo(context, tag):
+    client = boto3.client("lambda")
+    response = client.invoke(
+        FunctionName=context.searcher_lambda_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"tags": [tag]}),
+    )
+    results = json.loads(response["Payload"].read())
+    result_keys = {r["s3_key"] for r in results}
+    assert context.last_photo_key in result_keys, (
+        f"Expected {context.last_photo_key!r} in results for tag {tag!r}, got: {result_keys}"
+    )
+
+
 @then("the presigned URL for the photo should return HTTP 200")
 def step_presigned_url_accessible(context):
     result = next(

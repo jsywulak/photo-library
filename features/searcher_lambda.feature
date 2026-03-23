@@ -88,3 +88,16 @@ Feature: Searcher Lambda
     When the Function URL GET /inbox is called with the correct API key
     Then the HTTP response status should be 200
     And the response body should be a list
+
+  Scenario: POST /remove-tag logically removes a tag from a photo
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "cat, animal"
+    When the Function URL POST /remove-tag is called for the photo with tag "cat" and the correct API key
+    Then the HTTP response status should be 200
+    And searching for "cat" via the Lambda should not return the photo
+    And searching for "animal" via the Lambda should still return the photo
+
+  Scenario: POST /remove-tag rejects requests with a wrong API key
+    Given the searcher Lambda is deployed
+    When the Function URL POST /remove-tag is called with an incorrect API key
+    Then the HTTP response status should be 401

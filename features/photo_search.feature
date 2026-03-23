@@ -33,3 +33,24 @@ Feature: Photo search by tags
     When I search for "cat"
     Then the results should contain "cat.jpg"
     And the results should not contain "landscape.jpg"
+
+  Scenario: Removed tag is excluded from search results
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "cat, animal"
+    And the tag "cat" is removed from "cat.jpg"
+    When I search for "cat"
+    Then the results should not contain "cat.jpg"
+
+  Scenario: Removed tag does not exclude photo from other tag searches
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "cat, animal"
+    And the tag "cat" is removed from "cat.jpg"
+    When I search for "animal"
+    Then the results should contain "cat.jpg"
+
+  Scenario: Removed tag is not included in search result tags list
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "cat, animal"
+    And the tag "cat" is removed from "cat.jpg"
+    When I search for "animal"
+    Then the results for "cat.jpg" should not include the tag "cat"
