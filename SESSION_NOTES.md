@@ -302,10 +302,46 @@ Four new `make` targets for ongoing DB/S3 health checks:
 - Full BDD coverage: `photo_search.feature` (unit-level, local DB) and `searcher_lambda.feature` (infrastructure, live Lambda) for both endpoints; three new Playwright scenarios for the add-tag UI
 
 ### Usage
-  Current session                                                                                                                                                                              
-  ███                                                6% used                                                                
-  Resets 3am (America/New_York)                                                                                                                                                                
-                                                                                                                                                                                                 
+  Current session
+  ███                                                6% used
+  Resets 3am (America/New_York)
+
   Current week (all models)
   ██████████                                         20% used
   Resets Mar 25 at 6pm (America/New_York)
+
+### Inbox Archive and Process actions (2026-03-25)
+
+**Archive button**
+- Migration 006: added `archived_at TIMESTAMPTZ` to `photos` table — NULL means visible in inbox, non-null means hidden
+- `POST /archive-inbox` endpoint in the searcher Lambda — sets `archived_at = NOW()` on the matching inbox photo record; returns 404 if not found
+- `list_inbox` query updated to filter `WHERE archived_at IS NULL` so archived photos no longer appear
+- No S3 changes — the file stays in the inbox bucket, only the DB row is hidden
+
+**Process button**
+- `POST /process-inbox` endpoint — copies the S3 object from the inbox bucket to the photos bucket (`copy_object`), deletes it from the inbox bucket (`delete_object`), then removes the DB record for the inbox copy
+- The inbox DB record must be deleted explicitly because `photos` has a `UNIQUE (s3_key, bucket)` constraint — the processor Lambda creates a separate row with the photos bucket, so the inbox row would otherwise remain and show a broken presigned URL
+- EventBridge detects the new object in the photos bucket and automatically fires the processor Lambda, which calls Anthropic and tags the photo — no additional work needed from the searcher
+- IAM: added `s3:PutObject` on the photos bucket and `s3:DeleteObject` on the inbox bucket to the searcher role in `searcher.yaml` (CloudFormation stack update deployed)
+
+**Inbox lightbox UX**
+- Both buttons live in the lightbox; Archive is on the left, Process on the right
+- After either action, the lightbox auto-advances to the next photo in the grid rather than closing; falls back to the previous photo if at the end; closes and shows empty state if no photos remain
+- Left arrow key → Archive, Right arrow key → Process (only active when lightbox is open)
+- Inbox photo count shown in the header as "(N)" next to "Inbox"; decrements as photos are actioned
+- Buttons are disabled during the in-flight request to prevent double-submission; re-enabled on error or when the lightbox opens (covers the auto-advance case where `closeLightbox` is never called)
+
+**Tests**
+- 6 new Playwright scenarios in `features/inbox.feature` covering: button visibility, successful Archive, successful Process, error state for each
+- `step_open_inbox` mock updated to route by URL path so `/process-inbox` and `/archive-inbox` can return different responses than the inbox listing
+- `context.mock_process_error` and `context.mock_archive_error` flags added to `environment.py` for error-state scenarios
+
+
+### /usage
+  Current session
+  ███████████▌                                       23% used
+  Resets 11pm (America/New_York)
+
+  Current week (all models)
+  █▌                                                 3% used
+  Resets Apr 1 at 6pm (America/New_York)
