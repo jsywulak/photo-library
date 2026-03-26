@@ -20,7 +20,7 @@ import boto3
 import psycopg2
 from botocore.config import Config
 
-from searcher import add_tags, get_random_tags, list_inbox, remove_tag, search
+from searcher import add_tags, archive_inbox_photo, get_random_tags, list_inbox, process_inbox_photo, remove_tag, search
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -111,6 +111,42 @@ def lambda_handler(event, context):
                 found = remove_tag(s3_key, tag, conn)
                 conn.commit()
                 return _http_response(200, {"removed": found})
+            finally:
+                conn.close()
+
+        if method == "POST" and path == "/process-inbox":
+            try:
+                payload = json.loads(event.get("body") or "{}")
+            except json.JSONDecodeError:
+                return _http_response(400, {"error": "Invalid JSON body"})
+            s3_key = payload.get("s3_key")
+            if not s3_key:
+                return _http_response(400, {"error": "s3_key is required"})
+            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+            try:
+                found = process_inbox_photo(s3_key, conn, _s3_client, _INBOX_BUCKET, _S3_BUCKET)
+                if not found:
+                    return _http_response(404, {"error": "Photo not found"})
+                conn.commit()
+                return _http_response(200, {"success": True})
+            finally:
+                conn.close()
+
+        if method == "POST" and path == "/archive-inbox":
+            try:
+                payload = json.loads(event.get("body") or "{}")
+            except json.JSONDecodeError:
+                return _http_response(400, {"error": "Invalid JSON body"})
+            s3_key = payload.get("s3_key")
+            if not s3_key:
+                return _http_response(400, {"error": "s3_key is required"})
+            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+            try:
+                found = archive_inbox_photo(s3_key, conn, _INBOX_BUCKET)
+                if not found:
+                    return _http_response(404, {"error": "Photo not found"})
+                conn.commit()
+                return _http_response(200, {"success": True})
             finally:
                 conn.close()
 

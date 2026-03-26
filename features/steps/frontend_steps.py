@@ -70,11 +70,23 @@ def step_open_inbox(context):
     context.page = page
 
     def handle_lambda(route, request):
-        route.fulfill(
-            status=200,
-            content_type="application/json",
-            body=json.dumps(context.mock_inbox_results),
-        )
+        if "/process-inbox" in request.url:
+            if getattr(context, "mock_process_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"success": True}))
+        elif "/archive-inbox" in request.url:
+            if getattr(context, "mock_archive_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"success": True}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(context.mock_inbox_results))
 
     page.route("**lambda-url**", handle_lambda)
     page.goto(INBOX_HTML.as_uri())
@@ -278,3 +290,52 @@ def step_type_lightbox_tag_enter(context, tag):
 @then('"{tag}" is shown as a tag in the lightbox')
 def step_tag_shown_in_lightbox(context, tag):
     context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')").wait_for()
+
+
+# ── Inbox actions ─────────────────────────────────────────────────────────────
+
+@given("the process-inbox API accepts requests")
+def step_process_inbox_api_accepts(context):
+    pass  # handled in step_open_inbox mock routing
+
+
+@given("the process-inbox API returns an error")
+def step_process_inbox_api_error(context):
+    context.mock_process_error = True
+
+
+@given("the archive-inbox API accepts requests")
+def step_archive_inbox_api_accepts(context):
+    pass  # handled in step_open_inbox mock routing
+
+
+@given("the archive-inbox API returns an error")
+def step_archive_inbox_api_error(context):
+    context.mock_archive_error = True
+
+
+@when('I click the "Process" button in the lightbox')
+def step_click_process_button(context):
+    context.page.get_by_role("button", name="Process", exact=True).click()
+    context.page.wait_for_timeout(400)
+
+
+@when('I click the "Archive" button in the lightbox')
+def step_click_archive_button(context):
+    context.page.get_by_role("button", name="Archive", exact=True).click()
+    context.page.wait_for_timeout(400)
+
+
+@then('the lightbox shows a "Process" button')
+def step_lightbox_shows_process_button(context):
+    context.page.locator("#lightbox").get_by_role("button", name="Process").wait_for()
+
+
+@then('the lightbox shows an "Archive" button')
+def step_lightbox_shows_archive_button(context):
+    context.page.locator("#lightbox").get_by_role("button", name="Archive").wait_for()
+
+
+@then("the lightbox shows an error message")
+def step_lightbox_shows_error(context):
+    context.page.locator("#lightbox-error").wait_for(state="visible")

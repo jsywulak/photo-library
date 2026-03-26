@@ -47,3 +47,49 @@ Feature: Inbox UI
     And I click the first photo
     And I click the lightbox backdrop
     Then the lightbox is hidden
+
+  Scenario: Lightbox shows an Archive button
+    Given the inbox API returns 1 result
+    When I open the inbox page
+    And I click the first photo
+    Then the lightbox shows an "Archive" button
+
+  Scenario: Clicking Archive removes the photo from the grid
+    Given the inbox API returns 1 result
+    And the archive-inbox API accepts requests
+    When I open the inbox page
+    And I click the first photo
+    And I click the "Archive" button in the lightbox
+    Then the lightbox is hidden
+    And I see the status message "No photos in inbox."
+
+  Scenario: Archive button shows an error message when the API fails
+    Given the inbox API returns 1 result
+    And the archive-inbox API returns an error
+    When I open the inbox page
+    And I click the first photo
+    And I click the "Archive" button in the lightbox
+    Then the lightbox shows an error message
+
+  Scenario: Lightbox shows a Process button
+    Given the inbox API returns 1 result
+    When I open the inbox page
+    And I click the first photo
+    Then the lightbox shows a "Process" button
+
+  Scenario: Clicking Process removes the photo from the grid
+    Given the inbox API returns 1 result
+    And the process-inbox API accepts requests
+    When I open the inbox page
+    And I click the first photo
+    And I click the "Process" button in the lightbox
+    Then the lightbox is hidden
+    And I see the status message "No photos in inbox."
+
+  Scenario: Process button shows an error message when the API fails
+    Given the inbox API returns 1 result
+    And the process-inbox API returns an error
+    When I open the inbox page
+    And I click the first photo
+    And I click the "Process" button in the lightbox
+    Then the lightbox shows an error message

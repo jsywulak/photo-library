@@ -74,14 +74,6 @@
 
     .lightbox.hidden { display: none; }
 
-    .lightbox img {
-      max-width: 90vw;
-      max-height: 90vh;
-      object-fit: contain;
-      border-radius: 2px;
-      cursor: default;
-    }
-
     .lightbox-close {
       position: absolute;
       top: 1rem;
@@ -95,12 +87,48 @@
     }
 
     .lightbox-close:hover { color: #ccc; }
+
+    .lightbox-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: default;
+    }
+
+    .lightbox img {
+      max-width: 90vw;
+      max-height: 82vh;
+      object-fit: contain;
+      border-radius: 2px;
+      cursor: default;
+    }
+
+    .lightbox-actions { display: flex; gap: 0.75rem; }
+
+    .action-btn {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 4px;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 0.8125rem;
+      padding: 0.35rem 0.9rem;
+    }
+
+    .action-btn:hover { background: #2a2a2a; border-color: #666; }
+    .action-btn--muted { color: #555; border-color: #2a2a2a; }
+    .action-btn--muted:hover { color: #888; border-color: #444; }
+    .action-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .lightbox-error { color: #c0392b; font-size: 0.8125rem; }
+    .lightbox-error.hidden { display: none; }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>Photo Tagger — Inbox</h1>
+    <h1>Photo Tagger — Inbox <span id="inbox-count"></span></h1>
   </header>
 
   <div id="status" class="status"></div>
@@ -108,15 +136,26 @@
 
   <div class="lightbox hidden" id="lightbox">
     <button class="lightbox-close" id="lightbox-close">&times;</button>
-    <img id="lightbox-img" src="" alt="">
+    <div class="lightbox-content">
+      <img id="lightbox-img" src="" alt="">
+      <div class="lightbox-actions">
+        <button id="lightbox-archive" class="action-btn action-btn--muted">Archive</button>
+        <button id="lightbox-process" class="action-btn">Process</button>
+      </div>
+      <div id="lightbox-error" class="lightbox-error hidden"></div>
+    </div>
   </div>
 
   <script src="config.js"></script>
   <script>
-    const status    = document.getElementById('status');
-    const grid      = document.getElementById('photo-grid');
+    const status     = document.getElementById('status');
+    const grid       = document.getElementById('photo-grid');
+    const inboxCount = document.getElementById('inbox-count');
     const lightbox  = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
+
+    let currentS3Key   = null;
+    let currentGridItem = null;
 
     // ── Inbox load ────────────────────────────────────────────────────────────
 
@@ -140,20 +179,24 @@
 
       if (results.length === 0) {
         status.textContent = 'No photos in inbox.';
+        inboxCount.textContent = '';
         return;
       }
 
       status.style.display = 'none';
+      inboxCount.textContent = `(${results.length})`;
 
       results.forEach(result => {
         const item = document.createElement('div');
         item.className = 'grid-item';
+        item.dataset.url   = result.url;
+        item.dataset.s3Key = result.s3_key;
 
         const img = document.createElement('img');
         img.src = result.thumbnail_url;
         img.alt = result.s3_key;
         img.loading = 'lazy';
-        img.addEventListener('click', () => openLightbox(result.url));
+        img.addEventListener('click', () => openLightbox(result.url, result.s3_key, item));
 
         item.appendChild(img);
         grid.appendChild(item);
@@ -162,14 +205,56 @@
 
     // ── Lightbox ──────────────────────────────────────────────────────────────
 
-    function openLightbox(url) {
+    function openLightbox(url, s3Key, gridItem) {
       lightboxImg.src = url;
+      currentS3Key = s3Key;
+      currentGridItem = gridItem;
+      document.getElementById('lightbox-error').classList.add('hidden');
+      document.getElementById('lightbox-process').disabled = false;
+      document.getElementById('lightbox-archive').disabled = false;
       lightbox.classList.remove('hidden');
     }
 
     function closeLightbox() {
       lightbox.classList.add('hidden');
       lightboxImg.src = '';
+      document.getElementById('lightbox-error').classList.add('hidden');
+      document.getElementById('lightbox-process').disabled = false;
+      document.getElementById('lightbox-archive').disabled = false;
+    }
+
+    async function inboxAction(endpoint) {
+      const processBtn = document.getElementById('lightbox-process');
+      const archiveBtn = document.getElementById('lightbox-archive');
+      const errorDiv   = document.getElementById('lightbox-error');
+      processBtn.disabled = true;
+      archiveBtn.disabled = true;
+      errorDiv.classList.add('hidden');
+      try {
+        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({ s3_key: currentS3Key }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const nextItem = currentGridItem.nextElementSibling || currentGridItem.previousElementSibling;
+        currentGridItem.remove();
+        const remaining = grid.querySelectorAll('.grid-item').length;
+        if (nextItem) {
+          inboxCount.textContent = `(${remaining})`;
+          openLightbox(nextItem.dataset.url, nextItem.dataset.s3Key, nextItem);
+        } else {
+          inboxCount.textContent = '';
+          closeLightbox();
+          status.textContent = 'No photos in inbox.';
+          status.style.display = '';
+        }
+      } catch (err) {
+        errorDiv.textContent = `Error: ${err.message}`;
+        errorDiv.classList.remove('hidden');
+        processBtn.disabled = false;
+        archiveBtn.disabled = false;
+      }
     }
 
     lightbox.addEventListener('click', e => {
@@ -177,9 +262,14 @@
     });
 
     document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+    document.getElementById('lightbox-process').addEventListener('click', () => inboxAction('/process-inbox'));
+    document.getElementById('lightbox-archive').addEventListener('click', () => inboxAction('/archive-inbox'));
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closeLightbox();
+      if (lightbox.classList.contains('hidden')) return;
+      if (e.key === 'Escape')      closeLightbox();
+      if (e.key === 'ArrowRight')  inboxAction('/process-inbox');
+      if (e.key === 'ArrowLeft')   inboxAction('/archive-inbox');
     });
 
     loadInbox();

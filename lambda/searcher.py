@@ -22,7 +22,7 @@ def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
 def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str) -> list[dict]:
     with db_conn.cursor() as cur:
         cur.execute(
-            "SELECT s3_key FROM photos WHERE bucket = %s ORDER BY id DESC",
+            "SELECT s3_key FROM photos WHERE bucket = %s AND archived_at IS NULL ORDER BY id DESC",
             (inbox_bucket,),
         )
         keys = [row[0] for row in cur.fetchall()]
@@ -40,6 +40,35 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str) -> 
             "thumbnail_url": _thumbnail_url(key, thumbnail_bucket),
         })
     return results
+
+
+def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, photos_bucket: str) -> bool:
+    """Copy photo from inbox to photos bucket, delete from inbox, remove DB record.
+    Returns False if the photo was not found in the DB.
+    """
+    with db_conn.cursor() as cur:
+        cur.execute("SELECT id FROM photos WHERE s3_key = %s AND bucket = %s", (s3_key, inbox_bucket))
+        if not cur.fetchone():
+            return False
+    s3_client.copy_object(
+        CopySource={"Bucket": inbox_bucket, "Key": s3_key},
+        Bucket=photos_bucket,
+        Key=s3_key,
+    )
+    s3_client.delete_object(Bucket=inbox_bucket, Key=s3_key)
+    with db_conn.cursor() as cur:
+        cur.execute("DELETE FROM photos WHERE s3_key = %s AND bucket = %s", (s3_key, inbox_bucket))
+    return True
+
+
+def archive_inbox_photo(s3_key: str, db_conn, inbox_bucket: str) -> bool:
+    """Set archived_at on the inbox photo record. Returns False if not found."""
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND bucket = %s",
+            (s3_key, inbox_bucket),
+        )
+        return cur.rowcount > 0
 
 
 def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
