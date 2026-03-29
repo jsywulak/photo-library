@@ -345,3 +345,75 @@ Four new `make` targets for ongoing DB/S3 health checks:
   Current week (all models)
   █▌                                                 3% used
   Resets Apr 1 at 6pm (America/New_York)
+
+---
+
+## Session — 2026-03-29
+
+### Inbox pagination
+
+**Problem:** The inbox had ~2,000 photos and `list_inbox()` was fetching all of them on every load, making the page slow.
+
+**Approach:** TDD — wrote failing BDD tests first, then implemented.
+
+**Backend changes:**
+- `list_inbox()` now accepts `limit` (default 50) and `cursor` (integer photo ID) parameters
+- Fetches `limit + 1` rows to detect whether more pages exist, without a separate COUNT query for "has more"
+- Returns `{"items": [...], "next_cursor": <id or null>, "total": <total count>}` — total from a separate COUNT query so the header count is always accurate
+- Cursor logic: `WHERE id < %s ORDER BY id DESC` — stable under deletions (archived/processed photos don't shift subsequent pages)
+- `searcher_handler.py`: added `?cursor=` and `?limit=` query string parsing on the `/inbox` route; returns 400 on non-integer values
+- Added `_INBOX_PAGE_SIZE = 50` constant imported by the handler
+
+**Frontend changes (`inbox.html`):**
+- Added "Load more" button (hidden until a second page exists)
+- New state: `nextCursor`, `isLoading`, `totalCount`
+- `loadInbox(cursor)` replaces the old fetch function — appends to the grid rather than replacing it when `cursor` is set
+- After archive/process, if the grid empties and `nextCursor` is set, auto-loads the next page
+- Count in header uses server-provided `total`, decremented locally on each action
+- Deployed frontend first (with `Array.isArray(data)` backward-compat guard), then Lambda — avoided a window where either the old or new frontend would break against the opposite Lambda version
+
+**Tests added:**
+- `features/inbox.feature`: 3 new Playwright scenarios — Load more hidden on single page, visible when more exist, clicking appends photos
+- `features/searcher_lambda.feature`: 2 new `@infrastructure` scenarios — cursor pagination returns non-overlapping pages, invalid cursor returns 400
+- Frontend step helpers updated with `_inbox_items(context)` to handle `mock_inbox_results = []` vs unset
+
+### Makefile test target restructuring
+
+**Problem:** `make test` silently ran live AWS (`@infrastructure`) tests because it only excluded `@frontend`. Two feature files were untagged.
+
+**Changes:**
+- Added `@local` tag to `features/photo_processing.feature` and `features/photo_search.feature`
+- `make test` — runs unit tests (`python -m unittest discover tests/`) + all BDD tests (`behave`)
+- `make test-local` — `behave --tags @local` (local Postgres + Anthropic, no AWS, no Playwright)
+- `make test-frontend` — `behave --tags @frontend` (Playwright only)
+- `make test-infrastructure` — `behave --tags @infrastructure` (live AWS)
+- Updated `CLAUDE.md` to document the new targets
+
+### Readability refactoring
+
+Broad pass to eliminate copy-pasted patterns across tests, backend, and frontend.
+
+**Tests:**
+- `photo_processing_steps.py`: extracted `_run_processor(context, bucket=None)` helper — `step_run` and `step_run_with_bucket` were 95% identical, now each a 1-line delegate
+- `searcher_lambda_steps.py`: added `_api_get(path, api_key=None)` and `_api_post(path, body_dict, api_key=None)` helpers — eliminated 8 repeated 8–12 line HTTP boilerplate blocks
+
+**Backend:**
+- `processor.py`: unpacked `fetchone()` by name (`photo_id, processed_at = ...`) instead of opaque index access
+- `searcher.py`: extracted `_normalise_tags()` — `add_tags` and `search` both had the same inline list comprehension
+- `searcher_handler.py`:
+  - Added `_parse_body(event)` — replaces 5 copy-pasted `try: json.loads / except JSONDecodeError` blocks
+  - Added `_db()` context manager — replaces 8 copy-pasted `conn = psycopg2.connect(...) / try: ... / finally: conn.close()` blocks
+
+**Frontend:**
+- Both HTML files: `const BASE_URL = SEARCHER_URL.replace(/\/$/, '')` defined once at the top, replacing inline `.replace()` calls on every API call
+- `inbox.html`: removed `Array.isArray(data)` backward-compat guard (Lambda deployed with paginated response weeks ago)
+
+### Usage
+
+  Current session                                                                                                                                                                              
+  █████████████████████████████████████████████████  98% used                                                                                                                                  
+  Resets 3pm (America/New_York)                                                                                                                                                                
+                                                                                                                                                                                                 
+  Current week (all models)
+  ███████▌                                           15% used
+  Resets Apr 1 at 6pm (America/New_York)
