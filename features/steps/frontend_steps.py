@@ -126,6 +126,48 @@ def step_open_inbox(context):
     page.wait_for_selector("#photo-grid")
 
 
+@when("I open the inbox page with infinite scroll enabled")
+def step_open_inbox_infinite_scroll(context):
+    # Use a narrow viewport so 3 grid items (stacked vertically) push the
+    # scroll sentinel below the fold, requiring an explicit scroll to trigger load.
+    page = context.browser.new_page(viewport={"width": 400, "height": 400})
+    context.page = page
+    page.add_init_script("window.INFINITE_SCROLL = true;")
+
+    def handle_lambda(route, request):
+        if "/process-inbox" in request.url:
+            if getattr(context, "mock_process_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"success": True}))
+        elif "/archive-inbox" in request.url:
+            if getattr(context, "mock_archive_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"success": True}))
+        else:
+            if "cursor=" in request.url and hasattr(context, "mock_inbox_second_page"):
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps(context.mock_inbox_second_page))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps(context.mock_inbox_results))
+
+    page.route("**lambda-url**", handle_lambda)
+    page.goto(INBOX_HTML.as_uri())
+    page.wait_for_selector("#photo-grid")
+
+
+@when("I scroll to the bottom of the page")
+def step_scroll_to_bottom(context):
+    context.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    context.page.wait_for_timeout(600)
+
+
 @when("I open the frontend")
 def step_open_frontend(context):
     page = context.browser.new_page()

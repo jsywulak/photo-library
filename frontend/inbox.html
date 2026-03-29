@@ -136,6 +136,7 @@
   <div id="load-more-container" style="text-align:center;padding:1rem 2rem;">
     <button id="load-more-btn" class="action-btn" style="display:none;">Load more</button>
   </div>
+  <div id="scroll-sentinel" style="height:1px;"></div>
 
   <div class="lightbox hidden" id="lightbox">
     <button class="lightbox-close" id="lightbox-close">&times;</button>
@@ -151,6 +152,10 @@
 
   <script src="config.js"></script>
   <script>
+    // Feature flag — set to true to enable automatic infinite scroll.
+    // Can also be overridden by setting window.INFINITE_SCROLL before the script loads.
+    const INFINITE_SCROLL = typeof window.INFINITE_SCROLL !== 'undefined' ? window.INFINITE_SCROLL : true;
+
     const BASE_URL   = SEARCHER_URL.replace(/\/$/, '');
     const status     = document.getElementById('status');
     const grid       = document.getElementById('photo-grid');
@@ -307,6 +312,16 @@
     });
 
     loadInbox();
+
+    if (INFINITE_SCROLL) {
+      const sentinel = document.getElementById('scroll-sentinel');
+      const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && nextCursor !== null && !isLoading) {
+          loadInbox(nextCursor);
+        }
+      }, { rootMargin: '200px' });
+      observer.observe(sentinel);
+    }
   </script>
 </body>
 </html>

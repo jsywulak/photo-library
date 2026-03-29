@@ -111,3 +111,9 @@ Feature: Inbox UI
     And I click the "Load more" button
     Then I see 6 photos in the grid
     And the "Load more" button is hidden
+
+  Scenario: Scrolling to the bottom loads more photos when infinite scroll is enabled
+    Given the inbox API returns 3 results with more available
+    When I open the inbox page with infinite scroll enabled
+    And I scroll to the bottom of the page
+    Then I see 6 photos in the grid
