@@ -35,16 +35,16 @@ help:
 	@echo "  make deploy-frontend  Upload frontend to S3"
 	@echo ""
 	@echo "Data Integrity checks:"
-	@echo "  make neon-tags        Show tag counts from Neon"
-	@echo "  make neon-clean-tags  Remove tags with no associated photos"
 	@echo "  make neon-stats       Show photo/tag counts and top 5 tags"
+	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-sync-check        Compare S3 listing vs DB (find unprocessed/orphaned)"
 	@echo "  make neon-check-thumbnails        Report photos missing/orphaned thumbnails"
-	@echo "  make neon-clean-thumbnail-orphans Delete thumbnails with no matching photo"
 	@echo "  make neon-errors      List photos with processing errors"
 	@echo "  make neon-no-tags     List processed photos with no tags (silent failures)"
 	@echo "  make neon-reprocess-errors  Re-invoke processor Lambda for all errored photos"
+	@echo "  make neon-clean-tags  Remove tags with no associated photos"
 	@echo "  make neon-clean-orphans     Delete DB records with no matching S3 object"
+	@echo "  make neon-clean-thumbnail-orphans Delete thumbnails with no matching photo"
 
 
 install: install-hooks
