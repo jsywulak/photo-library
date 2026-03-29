@@ -70,6 +70,7 @@ neon-migrate:
 	python db/migrate.py "$(NEON_DATABASE_URL)"
 
 test:
+	python -m unittest discover tests/
 	behave
 
 test-local:

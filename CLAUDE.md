@@ -9,7 +9,7 @@
 - `make local-migrate` — apply pending migrations locally
 - `make neon-migrate` — apply pending migrations to Neon
 - `make process` — run the processor against `images/` and commit results
-- `make test` — run all BDD tests (local, frontend, and infrastructure)
+- `make test` — run unit tests and all BDD tests (local, frontend, and infrastructure)
 - `make test-local` — run local BDD tests only (no AWS, no Playwright)
 - `make test-unit` — run unit tests (no external dependencies)
 - `make test-frontend` — run Playwright frontend tests
