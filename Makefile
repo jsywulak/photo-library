@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -39,6 +39,7 @@ help:
 	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-sync-check        Compare S3 listing vs DB (find unprocessed/orphaned)"
 	@echo "  make neon-check-thumbnails        Report photos missing/orphaned thumbnails"
+	@echo "  make neon-audit-thumbnails        Three-way audit: S3 buckets, thumbnail bucket, DB"
 	@echo "  make neon-errors      List photos with processing errors"
 	@echo "  make neon-no-tags     List processed photos with no tags (silent failures)"
 	@echo "  make neon-reprocess-errors  Re-invoke processor Lambda for all errored photos"
@@ -144,6 +145,9 @@ neon-sync-check:
 
 neon-check-thumbnails:
 	python scripts/check_thumbnails.py
+
+neon-audit-thumbnails:
+	python scripts/audit_thumbnails.py
 
 neon-clean-thumbnail-orphans:
 	python scripts/clean_thumbnail_orphans.py
