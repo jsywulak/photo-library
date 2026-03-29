@@ -189,42 +189,33 @@ def step_run_expecting_failure(context):
     context.captured_logs = log_handler.buffer
 
 
-@when("the processor runs")
-def step_run(context):
+def _run_processor(context, bucket=None):
     import processor
 
     filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
     discovered = len(filenames)
     processed = skipped = 0
+    kwargs = {"bucket": bucket} if bucket is not None else {}
 
     for filename in filenames:
         image_bytes = (Path(context.location) / filename).read_bytes()
-        status = processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic())
-        if status == "skipped" or status == "unsupported":
+        status = processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic(), **kwargs)
+        if status in ("skipped", "unsupported"):
             skipped += 1
         else:
             processed += 1
 
     context.result = {"discovered": discovered, "processed": processed, "skipped": skipped}
+
+
+@when("the processor runs")
+def step_run(context):
+    _run_processor(context)
 
 
 @when('the processor runs for bucket "{bucket}"')
 def step_run_with_bucket(context, bucket):
-    import processor
-
-    filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
-    discovered = len(filenames)
-    processed = skipped = 0
-
-    for filename in filenames:
-        image_bytes = (Path(context.location) / filename).read_bytes()
-        status = processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic(), bucket=bucket)
-        if status == "skipped" or status == "unsupported":
-            skipped += 1
-        else:
-            processed += 1
-
-    context.result = {"discovered": discovered, "processed": processed, "skipped": skipped}
+    _run_processor(context, bucket=bucket)
 
 
 # ---------------------------------------------------------------------------

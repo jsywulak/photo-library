@@ -16,6 +16,10 @@ _DEFAULT_TAG_COUNT = 20
 _INBOX_PAGE_SIZE = 50
 
 
+def _normalise_tags(tags: list[str]) -> list[str]:
+    return [t.strip().lower() for t in tags if t.strip()]
+
+
 def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
     return f"https://{thumbnail_bucket}.s3.amazonaws.com/{_thumbnail_key(s3_key)}"
 
@@ -97,7 +101,7 @@ def add_tags(s3_key: str, tags: list[str], db_conn) -> int | None:
 
     Returns the number of associations added or restored, or None if the photo was not found.
     """
-    normalised = [t.strip().lower() for t in tags if t.strip()]
+    normalised = _normalise_tags(tags)
     if not normalised:
         return 0
 
@@ -154,7 +158,7 @@ def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
 
 
 def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None) -> list[dict]:
-    normalised = [t.strip().lower() for t in tags]
+    normalised = _normalise_tags(tags)
     with db_conn.cursor() as cur:
         cur.execute(
             """

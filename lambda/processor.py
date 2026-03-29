@@ -172,10 +172,9 @@ def process_one(
                 "SELECT id, processed_at FROM photos WHERE s3_key = %s AND bucket = %s",
                 (s3_key, bucket),
             )
-            existing = cur.fetchone()
-            if existing[1] is not None:
+            photo_id, processed_at = cur.fetchone()
+            if processed_at is not None:
                 return "skipped"
-            photo_id = existing[0]
         else:
             photo_id = row[0]
 

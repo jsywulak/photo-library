@@ -15,6 +15,7 @@ Environment variables required:
 
 import json
 import logging
+from contextlib import contextmanager
 
 import boto3
 import psycopg2
@@ -41,6 +42,22 @@ _CORS_HEADERS = {
 }
 
 
+@contextmanager
+def _db():
+    conn = psycopg2.connect(_DB_URL, connect_timeout=10)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def _parse_body(event):
+    try:
+        return json.loads(event.get("body") or "{}")
+    except json.JSONDecodeError:
+        return None
+
+
 def _http_response(status_code, body):
     return {
         "statusCode": status_code,
@@ -65,11 +82,8 @@ def lambda_handler(event, context):
             return _http_response(401, {"error": "Unauthorized"})
 
         if method == "GET" and path == "/tags":
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 return _http_response(200, get_random_tags(conn))
-            finally:
-                conn.close()
 
         if method == "GET" and path == "/inbox":
             qs = event.get("queryStringParameters") or {}
@@ -87,87 +101,67 @@ def lambda_handler(event, context):
                     limit = max(1, min(int(raw), 200))
             except (ValueError, TypeError):
                 return _http_response(400, {"error": "limit must be an integer"})
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor))
-            finally:
-                conn.close()
 
         if method == "POST" and path == "/add-tags":
-            try:
-                payload = json.loads(event.get("body") or "{}")
-            except json.JSONDecodeError:
+            payload = _parse_body(event)
+            if payload is None:
                 return _http_response(400, {"error": "Invalid JSON body"})
             s3_key = payload.get("s3_key")
             tags = payload.get("tags", [])
             if not s3_key or not isinstance(tags, list):
                 return _http_response(400, {"error": "s3_key and tags (list) are required"})
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 count = add_tags(s3_key, tags, conn)
                 if count is None:
                     return _http_response(404, {"error": "Photo not found"})
                 conn.commit()
                 return _http_response(200, {"added": count})
-            finally:
-                conn.close()
 
         if method == "POST" and path == "/remove-tag":
-            try:
-                payload = json.loads(event.get("body") or "{}")
-            except json.JSONDecodeError:
+            payload = _parse_body(event)
+            if payload is None:
                 return _http_response(400, {"error": "Invalid JSON body"})
             s3_key = payload.get("s3_key")
             tag = payload.get("tag")
             if not s3_key or not tag:
                 return _http_response(400, {"error": "s3_key and tag are required"})
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 found = remove_tag(s3_key, tag, conn)
                 conn.commit()
                 return _http_response(200, {"removed": found})
-            finally:
-                conn.close()
 
         if method == "POST" and path == "/process-inbox":
-            try:
-                payload = json.loads(event.get("body") or "{}")
-            except json.JSONDecodeError:
+            payload = _parse_body(event)
+            if payload is None:
                 return _http_response(400, {"error": "Invalid JSON body"})
             s3_key = payload.get("s3_key")
             if not s3_key:
                 return _http_response(400, {"error": "s3_key is required"})
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 found = process_inbox_photo(s3_key, conn, _s3_client, _INBOX_BUCKET, _S3_BUCKET)
                 if not found:
                     return _http_response(404, {"error": "Photo not found"})
                 conn.commit()
                 return _http_response(200, {"success": True})
-            finally:
-                conn.close()
 
         if method == "POST" and path == "/archive-inbox":
-            try:
-                payload = json.loads(event.get("body") or "{}")
-            except json.JSONDecodeError:
+            payload = _parse_body(event)
+            if payload is None:
                 return _http_response(400, {"error": "Invalid JSON body"})
             s3_key = payload.get("s3_key")
             if not s3_key:
                 return _http_response(400, {"error": "s3_key is required"})
-            conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-            try:
+            with _db() as conn:
                 found = archive_inbox_photo(s3_key, conn, _INBOX_BUCKET)
                 if not found:
                     return _http_response(404, {"error": "Photo not found"})
                 conn.commit()
                 return _http_response(200, {"success": True})
-            finally:
-                conn.close()
 
-        try:
-            payload = json.loads(event.get("body") or "{}")
-        except json.JSONDecodeError:
+        payload = _parse_body(event)
+        if payload is None:
             return _http_response(400, {"error": "Invalid JSON body"})
 
         tags = payload.get("tags", [])
@@ -182,10 +176,7 @@ def lambda_handler(event, context):
 
     logger.info("Searching for tags: %s", tags)
 
-    conn = psycopg2.connect(_DB_URL, connect_timeout=10)
-    try:
+    with _db() as conn:
         results = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET)
         logger.info("Found %d results", len(results))
         return _http_response(200, results) if is_function_url else results
-    finally:
-        conn.close()

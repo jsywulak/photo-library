@@ -272,6 +272,7 @@
 
   <script src="config.js"></script>
   <script>
+    const BASE_URL    = SEARCHER_URL.replace(/\/$/, '');
     const chipInput   = document.getElementById('chip-input');
     const tagInput    = document.getElementById('tag-input');
     const status      = document.getElementById('status');
@@ -341,7 +342,7 @@
 
     async function loadSuggestions() {
       try {
-        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + '/tags', {
+        const res = await fetch(BASE_URL + '/tags', {
           headers: { 'x-api-key': API_KEY },
         });
         if (!res.ok) return;
@@ -383,7 +384,7 @@
 
     async function doSearch() {
       try {
-        const res = await fetch(SEARCHER_URL, {
+        const res = await fetch(BASE_URL, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
           body: JSON.stringify({ tags }),
@@ -438,7 +439,7 @@
       btn.setAttribute('aria-label', `Remove tag ${tag}`);
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await fetch(`${SEARCHER_URL}/remove-tag`, {
+        await fetch(`${BASE_URL}/remove-tag`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
           body: JSON.stringify({ s3_key: s3Key, tag }),
@@ -468,7 +469,7 @@
             const newChip = createTagChip(tag, s3Key);
             input.replaceWith(chip);
             lightboxTags.insertBefore(newChip, chip);
-            fetch(`${SEARCHER_URL}/add-tags`, {
+            fetch(`${BASE_URL}/add-tags`, {
               method: 'POST',
               headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
               body: JSON.stringify({ s3_key: s3Key, tags: [tag] }),

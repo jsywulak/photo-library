@@ -20,6 +20,33 @@ from behave import given, then, when
 from common import neon_conn, seed_photo
 
 
+def _api_get(path, api_key=None):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + path
+    key = api_key if api_key is not None else os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": key}, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+
+def _api_post(path, body_dict, api_key=None):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + path
+    key = api_key if api_key is not None else os.environ["API_KEY"]
+    body = json.dumps(body_dict).encode()
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"content-type": "application/json", "x-api-key": key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+
 @given("the searcher Lambda is deployed")
 def step_searcher_lambda_deployed(context):
     name = os.environ["SEARCHER_LAMBDA_NAME"]
@@ -92,23 +119,12 @@ def step_ranking(context):
 
 @when("the Function URL GET /tags is called with the correct API key")
 def step_get_tags_correct_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/tags"
-    api_key = os.environ["API_KEY"]
-    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
+    context.http_status, context.http_body = _api_get("/tags")
 
 
 @when("the Function URL GET /tags is called with an incorrect API key")
 def step_get_tags_wrong_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/tags"
-    req = urllib.request.Request(url, headers={"x-api-key": "wrong-key"}, method="GET")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_get("/tags", api_key="wrong-key")
 
 
 @then("the response body should be a list of strings")
@@ -131,51 +147,18 @@ def step_response_at_most_20(context):
 @when('the Function URL is called with tags "{tags}" and the correct API key')
 def step_function_url_correct_key(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]
-    url = os.environ["SEARCHER_URL"]
-    api_key = os.environ["API_KEY"]
-    body = json.dumps({"tags": tag_list}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": api_key},
-        method="POST",
-    )
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
+    context.http_status, context.http_body = _api_post("/", {"tags": tag_list})
 
 
 @when("the Function URL is called with a string tags payload and the correct API key")
 def step_function_url_string_tags(context):
-    url = os.environ["SEARCHER_URL"]
-    api_key = os.environ["API_KEY"]
-    body = json.dumps({"tags": "cat"}).encode()  # string instead of list
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": api_key},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_post("/", {"tags": "cat"})  # string instead of list
 
 
 @when('the Function URL is called with tags "{tags}" and an incorrect API key')
 def step_function_url_wrong_key(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]
-    url = os.environ["SEARCHER_URL"]
-    body = json.dumps({"tags": tag_list}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": "wrong-key"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_post("/", {"tags": tag_list}, api_key="wrong-key")
 
 
 @then("the HTTP response status should be {status:d}")
@@ -309,23 +292,12 @@ def step_upload_to_inbox_with_db(context):
 
 @when("the Function URL GET /inbox is called with the correct API key")
 def step_get_inbox_correct_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/inbox"
-    api_key = os.environ["API_KEY"]
-    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
+    context.http_status, context.http_body = _api_get("/inbox")
 
 
 @when("the Function URL GET /inbox is called with an incorrect API key")
 def step_get_inbox_wrong_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/inbox"
-    req = urllib.request.Request(url, headers={"x-api-key": "wrong-key"}, method="GET")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_get("/inbox", api_key="wrong-key")
 
 
 @then("each inbox result should include a thumbnail_url")
@@ -361,34 +333,15 @@ def step_response_is_list(context):
 
 @when('the Function URL POST /add-tags is called for the photo with tags "{tags}" and the correct API key')
 def step_add_tags_correct_key(context, tags):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/add-tags"
-    api_key = os.environ["API_KEY"]
     tag_list = [t.strip() for t in tags.split(",")]
-    body = json.dumps({"s3_key": context.last_photo_key, "tags": tag_list}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": api_key},
-        method="POST",
+    context.http_status, context.http_body = _api_post(
+        "/add-tags", {"s3_key": context.last_photo_key, "tags": tag_list}
     )
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
 
 
 @when("the Function URL POST /add-tags is called with an incorrect API key")
 def step_add_tags_wrong_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/add-tags"
-    body = json.dumps({"s3_key": "dummy.jpg", "tags": ["cat"]}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": "wrong-key"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_post("/add-tags", {"s3_key": "dummy.jpg", "tags": ["cat"]}, api_key="wrong-key")
 
 
 @then('searching for "{tag}" via the Lambda should return the photo')
@@ -408,34 +361,15 @@ def step_lambda_search_includes_photo_generic(context, tag):
 
 @when('the Function URL POST /remove-tag is called for the photo with tag "{tag}" and the correct API key')
 def step_remove_tag_correct_key(context, tag):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/remove-tag"
-    api_key = os.environ["API_KEY"]
-    body = json.dumps({"s3_key": context.last_photo_key, "tag": tag}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": api_key},
-        method="POST",
+    context.http_status, context.http_body = _api_post(
+        "/remove-tag", {"s3_key": context.last_photo_key, "tag": tag}
     )
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
     context.removed_tag = tag
 
 
 @when("the Function URL POST /remove-tag is called with an incorrect API key")
 def step_remove_tag_wrong_key(context):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + "/remove-tag"
-    body = json.dumps({"s3_key": "dummy.jpg", "tag": "cat"}).encode()
-    req = urllib.request.Request(
-        url, data=body,
-        headers={"content-type": "application/json", "x-api-key": "wrong-key"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, _ = _api_post("/remove-tag", {"s3_key": "dummy.jpg", "tag": "cat"}, api_key="wrong-key")
 
 
 @then('searching for "{tag}" via the Lambda should not return the photo')
@@ -489,12 +423,7 @@ def step_seed_n_inbox_photos(context, n):
 
 @when("the Function URL GET /inbox is called with limit {limit:d} and the correct API key")
 def step_get_inbox_with_limit(context, limit):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?limit={limit}"
-    api_key = os.environ["API_KEY"]
-    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
+    context.http_status, context.http_body = _api_get(f"/inbox?limit={limit}")
     context.inbox_last_limit = limit
 
 
@@ -502,25 +431,12 @@ def step_get_inbox_with_limit(context, limit):
 def step_get_inbox_with_next_cursor(context):
     cursor = context.http_body["next_cursor"]
     limit = getattr(context, "inbox_last_limit", 50)
-    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?cursor={cursor}&limit={limit}"
-    api_key = os.environ["API_KEY"]
-    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
-    with urllib.request.urlopen(req) as resp:
-        context.http_status = resp.status
-        context.http_body = json.loads(resp.read())
+    context.http_status, context.http_body = _api_get(f"/inbox?cursor={cursor}&limit={limit}")
 
 
 @when('the Function URL GET /inbox is called with cursor "{cursor}" and the correct API key')
 def step_get_inbox_with_cursor_string(context, cursor):
-    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?cursor={cursor}"
-    api_key = os.environ["API_KEY"]
-    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            context.http_status = resp.status
-            context.http_body = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        context.http_status = e.code
+    context.http_status, context.http_body = _api_get(f"/inbox?cursor={cursor}")
 
 
 @then("the inbox response contains {n:d} item")

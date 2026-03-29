@@ -151,6 +151,7 @@
 
   <script src="config.js"></script>
   <script>
+    const BASE_URL   = SEARCHER_URL.replace(/\/$/, '');
     const status     = document.getElementById('status');
     const grid       = document.getElementById('photo-grid');
     const inboxCount = document.getElementById('inbox-count');
@@ -178,14 +179,14 @@
       }
 
       try {
-        let url = SEARCHER_URL.replace(/\/$/, '') + '/inbox';
+        let url = BASE_URL + '/inbox';
         if (cursor !== null) url += `?cursor=${cursor}`;
         const res = await fetch(url, { headers: { 'x-api-key': API_KEY } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const items = Array.isArray(data) ? data : data.items;
-        nextCursor = Array.isArray(data) ? null : (data.next_cursor ?? null);
-        if (cursor === null) totalCount = Array.isArray(data) ? null : (data.total ?? null);
+        const items = data.items;
+        nextCursor = data.next_cursor ?? null;
+        if (cursor === null) totalCount = data.total ?? null;
         appendToGrid(items, cursor === null);
         if (nextCursor !== null) loadMoreBtn.style.display = '';
       } catch (err) {
@@ -257,7 +258,7 @@
       archiveBtn.disabled = true;
       errorDiv.classList.add('hidden');
       try {
-        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + endpoint, {
+        const res = await fetch(BASE_URL + endpoint, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
           body: JSON.stringify({ s3_key: currentS3Key }),
