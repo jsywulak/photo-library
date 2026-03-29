@@ -20,7 +20,7 @@ import boto3
 import psycopg2
 from botocore.config import Config
 
-from searcher import add_tags, archive_inbox_photo, get_random_tags, list_inbox, process_inbox_photo, remove_tag, search
+from searcher import _INBOX_PAGE_SIZE, add_tags, archive_inbox_photo, get_random_tags, list_inbox, process_inbox_photo, remove_tag, search
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -36,7 +36,7 @@ _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "x-api-key, content-type",
 }
 
@@ -72,9 +72,24 @@ def lambda_handler(event, context):
                 conn.close()
 
         if method == "GET" and path == "/inbox":
+            qs = event.get("queryStringParameters") or {}
+            cursor = None
+            limit = _INBOX_PAGE_SIZE
+            try:
+                raw = qs.get("cursor")
+                if raw is not None:
+                    cursor = int(raw)
+            except (ValueError, TypeError):
+                return _http_response(400, {"error": "cursor must be an integer"})
+            try:
+                raw = qs.get("limit")
+                if raw is not None:
+                    limit = max(1, min(int(raw), 200))
+            except (ValueError, TypeError):
+                return _http_response(400, {"error": "limit must be an integer"})
             conn = psycopg2.connect(_DB_URL, connect_timeout=10)
             try:
-                return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET))
+                return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor))
             finally:
                 conn.close()
 

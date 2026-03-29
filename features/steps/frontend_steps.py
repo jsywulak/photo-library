@@ -23,14 +23,43 @@ INBOX_HTML = Path(__file__).parents[2] / "frontend" / "inbox.html"
 @given("the inbox API returns {n:d} result")
 @given("the inbox API returns {n:d} results")
 def step_inbox_returns_n(context, n):
-    context.mock_inbox_results = [
-        {
-            "s3_key": f"inbox_photo_{i}.jpg",
-            "url": f"https://presigned.example.com/inbox_photo_{i}.jpg",
-            "thumbnail_url": f"https://thumbnails.example.com/thumbnails/inbox_photo_{i}.webp",
-        }
-        for i in range(n)
-    ]
+    context.mock_inbox_results = {
+        "items": [
+            {
+                "s3_key": f"inbox_photo_{i}.jpg",
+                "url": f"https://presigned.example.com/inbox_photo_{i}.jpg",
+                "thumbnail_url": f"https://thumbnails.example.com/thumbnails/inbox_photo_{i}.webp",
+            }
+            for i in range(n)
+        ],
+        "next_cursor": None,
+    }
+
+
+@given("the inbox API returns {n:d} results with more available")
+def step_inbox_returns_n_with_more(context, n):
+    context.mock_inbox_results = {
+        "items": [
+            {
+                "s3_key": f"inbox_photo_{i}.jpg",
+                "url": f"https://presigned.example.com/inbox_photo_{i}.jpg",
+                "thumbnail_url": f"https://thumbnails.example.com/thumbnails/inbox_photo_{i}.webp",
+            }
+            for i in range(n)
+        ],
+        "next_cursor": 42,
+    }
+    context.mock_inbox_second_page = {
+        "items": [
+            {
+                "s3_key": f"inbox_photo_{n + i}.jpg",
+                "url": f"https://presigned.example.com/inbox_photo_{n + i}.jpg",
+                "thumbnail_url": f"https://thumbnails.example.com/thumbnails/inbox_photo_{n + i}.webp",
+            }
+            for i in range(n)
+        ],
+        "next_cursor": None,
+    }
 
 
 @given("the tags API returns {tags_json}")
@@ -85,8 +114,12 @@ def step_open_inbox(context):
                 route.fulfill(status=200, content_type="application/json",
                               body=json.dumps({"success": True}))
         else:
-            route.fulfill(status=200, content_type="application/json",
-                          body=json.dumps(context.mock_inbox_results))
+            if "cursor=" in request.url and hasattr(context, "mock_inbox_second_page"):
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps(context.mock_inbox_second_page))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps(context.mock_inbox_results))
 
     page.route("**lambda-url**", handle_lambda)
     page.goto(INBOX_HTML.as_uri())
@@ -227,12 +260,22 @@ def step_lightbox_hidden(context):
 
 
 
+def _inbox_items(context):
+    """Return the list of inbox items regardless of envelope format."""
+    results = getattr(context, "mock_inbox_results", None)
+    if isinstance(results, dict):
+        return results["items"]
+    if isinstance(results, list):
+        return results
+    return context.mock_results
+
+
 @then("the grid images use the thumbnail URL")
 def step_grid_uses_thumbnail_url(context):
     img = context.page.locator(".grid-item img").first
     img.wait_for()
     src = img.get_attribute("src")
-    results = getattr(context, "mock_inbox_results", None) or context.mock_results
+    results = _inbox_items(context) if getattr(context, "mock_inbox_results", None) else context.mock_results
     expected = results[0]["thumbnail_url"]
     assert src == expected, f"Expected thumbnail URL {expected!r}, got {src!r}"
 
@@ -240,7 +283,10 @@ def step_grid_uses_thumbnail_url(context):
 @then("the lightbox shows the full-size URL")
 def step_lightbox_shows_full_url(context):
     src = context.page.locator("#lightbox-img").get_attribute("src")
-    results = context.mock_results or context.mock_inbox_results
+    if getattr(context, "mock_inbox_results", None):
+        results = _inbox_items(context)
+    else:
+        results = context.mock_results
     expected = results[0]["url"]
     assert src == expected, f"Expected full-size URL {expected!r}, got {src!r}"
 
@@ -339,3 +385,21 @@ def step_lightbox_shows_archive_button(context):
 @then("the lightbox shows an error message")
 def step_lightbox_shows_error(context):
     context.page.locator("#lightbox-error").wait_for(state="visible")
+
+
+@then('the "Load more" button is visible')
+def step_load_more_visible(context):
+    context.page.locator("#load-more-btn").wait_for(state="visible")
+
+
+@then('the "Load more" button is hidden')
+def step_load_more_hidden(context):
+    btn = context.page.locator("#load-more-btn")
+    btn.wait_for(state="attached")
+    assert btn.is_hidden(), "Expected 'Load more' button to be hidden"
+
+
+@when('I click the "Load more" button')
+def step_click_load_more(context):
+    context.page.locator("#load-more-btn").click()
+    context.page.wait_for_timeout(400)

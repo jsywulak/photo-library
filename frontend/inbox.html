@@ -133,6 +133,9 @@
 
   <div id="status" class="status"></div>
   <div id="photo-grid" class="grid"></div>
+  <div id="load-more-container" style="text-align:center;padding:1rem 2rem;">
+    <button id="load-more-btn" class="action-btn" style="display:none;">Load more</button>
+  </div>
 
   <div class="lightbox hidden" id="lightbox">
     <button class="lightbox-close" id="lightbox-close">&times;</button>
@@ -154,39 +157,60 @@
     const lightbox  = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightbox-img');
 
-    let currentS3Key   = null;
+    let currentS3Key    = null;
     let currentGridItem = null;
+    let nextCursor      = null;
+    let isLoading       = false;
+    let totalCount      = null;
+
+    const loadMoreBtn = document.getElementById('load-more-btn');
 
     // ── Inbox load ────────────────────────────────────────────────────────────
 
-    async function loadInbox() {
+    async function loadInbox(cursor = null) {
+      if (isLoading) return;
+      isLoading = true;
+      loadMoreBtn.style.display = 'none';
+
+      if (cursor === null) {
+        status.textContent = '';
+        status.style.display = '';
+      }
+
       try {
-        const res = await fetch(SEARCHER_URL.replace(/\/$/, '') + '/inbox', {
-          headers: { 'x-api-key': API_KEY },
-        });
+        let url = SEARCHER_URL.replace(/\/$/, '') + '/inbox';
+        if (cursor !== null) url += `?cursor=${cursor}`;
+        const res = await fetch(url, { headers: { 'x-api-key': API_KEY } });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const results = await res.json();
-        renderGrid(results);
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : data.items;
+        nextCursor = Array.isArray(data) ? null : (data.next_cursor ?? null);
+        if (cursor === null) totalCount = Array.isArray(data) ? null : (data.total ?? null);
+        appendToGrid(items, cursor === null);
+        if (nextCursor !== null) loadMoreBtn.style.display = '';
       } catch (err) {
         status.textContent = `Error: ${err.message}`;
+        status.style.display = '';
+      } finally {
+        isLoading = false;
       }
     }
 
     // ── Grid ──────────────────────────────────────────────────────────────────
 
-    function renderGrid(results) {
-      grid.innerHTML = '';
+    function appendToGrid(items, replace) {
+      if (replace) grid.innerHTML = '';
 
-      if (results.length === 0) {
+      if (replace && items.length === 0) {
         status.textContent = 'No photos in inbox.';
+        status.style.display = '';
         inboxCount.textContent = '';
         return;
       }
 
       status.style.display = 'none';
-      inboxCount.textContent = `(${results.length})`;
 
-      results.forEach(result => {
+      items.forEach(result => {
         const item = document.createElement('div');
         item.className = 'grid-item';
         item.dataset.url   = result.url;
@@ -201,6 +225,8 @@
         item.appendChild(img);
         grid.appendChild(item);
       });
+
+      inboxCount.textContent = totalCount !== null ? `(${totalCount})` : '';
     }
 
     // ── Lightbox ──────────────────────────────────────────────────────────────
@@ -239,15 +265,20 @@
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const nextItem = currentGridItem.nextElementSibling || currentGridItem.previousElementSibling;
         currentGridItem.remove();
+        if (totalCount !== null) totalCount--;
+        inboxCount.textContent = totalCount !== null && totalCount > 0 ? `(${totalCount})` : '';
         const remaining = grid.querySelectorAll('.grid-item').length;
-        if (nextItem) {
-          inboxCount.textContent = `(${remaining})`;
+        if (remaining === 0 && nextCursor !== null) {
+          closeLightbox();
+          loadInbox(nextCursor);
+        } else if (nextItem) {
           openLightbox(nextItem.dataset.url, nextItem.dataset.s3Key, nextItem);
         } else {
-          inboxCount.textContent = '';
           closeLightbox();
-          status.textContent = 'No photos in inbox.';
-          status.style.display = '';
+          if (totalCount === 0 || totalCount === null) {
+            status.textContent = 'No photos in inbox.';
+            status.style.display = '';
+          }
         }
       } catch (err) {
         errorDiv.textContent = `Error: ${err.message}`;
@@ -264,6 +295,8 @@
     document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
     document.getElementById('lightbox-process').addEventListener('click', () => inboxAction('/process-inbox'));
     document.getElementById('lightbox-archive').addEventListener('click', () => inboxAction('/archive-inbox'));
+
+    loadMoreBtn.addEventListener('click', () => loadInbox(nextCursor));
 
     document.addEventListener('keydown', e => {
       if (lightbox.classList.contains('hidden')) return;

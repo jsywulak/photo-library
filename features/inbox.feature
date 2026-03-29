@@ -93,3 +93,21 @@ Feature: Inbox UI
     And I click the first photo
     And I click the "Process" button in the lightbox
     Then the lightbox shows an error message
+
+  Scenario: Load more button is hidden when all photos have loaded
+    Given the inbox API returns 3 results
+    When I open the inbox page
+    Then the "Load more" button is hidden
+
+  Scenario: Inbox shows a "Load more" button when more photos exist
+    Given the inbox API returns 3 results with more available
+    When I open the inbox page
+    Then I see 3 photos in the grid
+    And the "Load more" button is visible
+
+  Scenario: Clicking "Load more" appends additional photos to the grid
+    Given the inbox API returns 3 results with more available
+    When I open the inbox page
+    And I click the "Load more" button
+    Then I see 6 photos in the grid
+    And the "Load more" button is hidden

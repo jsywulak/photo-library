@@ -330,8 +330,9 @@ def step_get_inbox_wrong_key(context):
 
 @then("each inbox result should include a thumbnail_url")
 def step_inbox_results_have_thumbnail_url(context):
-    assert context.http_body, "Expected at least one inbox result"
-    for result in context.http_body:
+    items = context.http_body.get("items", [])
+    assert items, "Expected at least one inbox result"
+    for result in items:
         assert "thumbnail_url" in result, f"Inbox result missing 'thumbnail_url': {result}"
         assert result["thumbnail_url"].startswith("https://"), (
             f"Expected HTTPS thumbnail URL, got: {result['thumbnail_url']!r}"
@@ -340,11 +341,12 @@ def step_inbox_results_have_thumbnail_url(context):
 
 @then("the response body should contain the inbox photo with a presigned URL")
 def step_inbox_contains_photo(context):
-    keys = {item["s3_key"] for item in context.http_body}
+    items = context.http_body.get("items", [])
+    keys = {item["s3_key"] for item in items}
     assert context.inbox_s3_key in keys, (
         f"Expected {context.inbox_s3_key!r} in inbox response, got: {keys}"
     )
-    result = next(r for r in context.http_body if r["s3_key"] == context.inbox_s3_key)
+    result = next(r for r in items if r["s3_key"] == context.inbox_s3_key)
     assert "url" in result and result["url"].startswith("https://"), (
         f"Expected presigned URL in result, got: {result}"
     )
@@ -352,8 +354,8 @@ def step_inbox_contains_photo(context):
 
 @then("the response body should be a list")
 def step_response_is_list(context):
-    assert isinstance(context.http_body, list), (
-        f"Expected a list, got: {type(context.http_body)}"
+    assert isinstance(context.http_body, dict) and "items" in context.http_body, (
+        f"Expected a paginated inbox response with 'items' key, got: {type(context.http_body)}"
     )
 
 
@@ -464,6 +466,93 @@ def step_lambda_search_includes_photo(context, tag):
     assert context.last_photo_key in result_keys, (
         f"Expected {context.last_photo_key!r} in results for tag {tag!r}, got: {result_keys}"
     )
+
+
+@given("{n:d} inbox photos are seeded in the database")
+def step_seed_n_inbox_photos(context, n):
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+
+    bucket = os.environ["INBOX_BUCKET"]
+    conn = neon_conn()
+    for i in range(n):
+        s3_key = f"test-{uuid.uuid4().hex[:8]}-inbox-{i}.jpg"
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO photos (s3_key, bucket) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (s3_key, bucket),
+            )
+        context.neon_test_s3_keys.append(s3_key)
+    conn.commit()
+    conn.close()
+
+
+@when("the Function URL GET /inbox is called with limit {limit:d} and the correct API key")
+def step_get_inbox_with_limit(context, limit):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?limit={limit}"
+    api_key = os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+    context.inbox_last_limit = limit
+
+
+@when("the Function URL GET /inbox is called with the next cursor and the correct API key")
+def step_get_inbox_with_next_cursor(context):
+    cursor = context.http_body["next_cursor"]
+    limit = getattr(context, "inbox_last_limit", 50)
+    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?cursor={cursor}&limit={limit}"
+    api_key = os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
+    with urllib.request.urlopen(req) as resp:
+        context.http_status = resp.status
+        context.http_body = json.loads(resp.read())
+
+
+@when('the Function URL GET /inbox is called with cursor "{cursor}" and the correct API key')
+def step_get_inbox_with_cursor_string(context, cursor):
+    url = os.environ["SEARCHER_URL"].rstrip("/") + f"/inbox?cursor={cursor}"
+    api_key = os.environ["API_KEY"]
+    req = urllib.request.Request(url, headers={"x-api-key": api_key}, method="GET")
+    try:
+        with urllib.request.urlopen(req) as resp:
+            context.http_status = resp.status
+            context.http_body = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        context.http_status = e.code
+
+
+@then("the inbox response contains {n:d} item")
+@then("the inbox response contains {n:d} items")
+def step_inbox_response_contains_n_items(context, n):
+    assert isinstance(context.http_body, dict), f"Expected dict, got {type(context.http_body)}"
+    items = context.http_body.get("items", [])
+    assert len(items) == n, f"Expected {n} items, got {len(items)}"
+    context.inbox_last_page_keys = {item["s3_key"] for item in items}
+
+
+@then("the inbox response has a next_cursor")
+def step_inbox_response_has_next_cursor(context):
+    cursor = context.http_body.get("next_cursor")
+    assert cursor is not None, f"Expected a next_cursor, got None. Body: {context.http_body}"
+
+
+@then("the inbox response has no next_cursor")
+def step_inbox_response_has_no_next_cursor(context):
+    cursor = context.http_body.get("next_cursor")
+    assert cursor is None, f"Expected next_cursor to be None, got {cursor!r}"
+
+
+@then("the inbox response items do not overlap with the previous page")
+def step_inbox_no_overlap(context):
+    assert isinstance(context.http_body, dict), f"Expected dict, got {type(context.http_body)}"
+    items = context.http_body.get("items", [])
+    assert items, "Expected at least one item on the second page"
+    current_keys = {item["s3_key"] for item in items}
+    previous_keys = getattr(context, "inbox_last_page_keys", set())
+    overlap = current_keys & previous_keys
+    assert not overlap, f"Pages overlap on keys: {overlap}"
 
 
 @then("the presigned URL for the photo should return HTTP 200")
