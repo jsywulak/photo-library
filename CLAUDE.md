@@ -9,9 +9,11 @@
 - `make local-migrate` — apply pending migrations locally
 - `make neon-migrate` — apply pending migrations to Neon
 - `make process` — run the processor against `images/` and commit results
-- `make test` — run BDD tests (excludes @frontend and @infrastructure)
+- `make test` — run all BDD tests (local, frontend, and infrastructure)
+- `make test-local` — run local BDD tests only (no AWS, no Playwright)
 - `make test-unit` — run unit tests (no external dependencies)
 - `make test-frontend` — run Playwright frontend tests
+- `make test-infrastructure` — run BDD tests against live AWS (Lambda, Neon, S3)
 - `make neon-stats` — show photo/tag counts and top 5 tags from Neon
 - `make neon-tags` — show all tag counts from Neon
 - `make neon-clean-tags` — delete orphaned tags from Neon

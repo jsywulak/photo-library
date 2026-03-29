@@ -1,3 +1,4 @@
+@local
 Feature: Photo processing pipeline
   Photos are ingested from a local directory, checked against the database,
   and new ones are tagged and stored.

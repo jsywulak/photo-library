@@ -1,3 +1,4 @@
+@local
 Feature: Photo search by tags
   Searching returns photos that match any of the given tags,
   ranked by how many of the searched tags each photo has,

@@ -70,13 +70,19 @@ neon-migrate:
 	python db/migrate.py "$(NEON_DATABASE_URL)"
 
 test:
-	behave --tags "not @frontend"
+	behave
+
+test-local:
+	behave --tags @local
 
 test-unit:
 	python -m unittest discover tests/
 
 test-frontend:
 	behave --tags @frontend
+
+test-infrastructure:
+	behave --tags @infrastructure
 
 process:
 	python scripts/run_processor.py $(DIR)
