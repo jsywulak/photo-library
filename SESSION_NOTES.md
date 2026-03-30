@@ -417,3 +417,68 @@ Broad pass to eliminate copy-pasted patterns across tests, backend, and frontend
   Current week (all models)
   ███████▌                                           15% used
   Resets Apr 1 at 6pm (America/New_York)
+
+---
+
+## Session — 2026-03-29 (continued)
+
+### Sort inbox by EXIF capture time
+
+**Problem:** Inbox photos were ordered by `id DESC` (S3 arrival order), creating a mishmash when photos from different shoots were uploaded at different times. Goal: sort by EXIF `DateTimeOriginal`, oldest-captured-first, with no-EXIF photos at the end.
+
+**Deployed in three backwards-compatible phases:**
+
+**Phase 1 — Migration (no behaviour change)**
+- `db/migrations/007_photo_captured_at.sql`: added `captured_at TIMESTAMPTZ` column and index to `photos`
+- Applied immediately to both local and Neon — nullable column, no production impact
+
+**Phase 2 — Processor**
+- Added `_extract_captured_at(image_bytes)` to `lambda/processor.py` using Pillow's `img.getexif().get_ifd(34665).get(36867)` — `DateTimeOriginal` lives in the Exif Sub-IFD (pointer tag 34665), not the main IFD. Added fallback `or exif.get(36867)` for synthetic test JPEGs that put the tag in the main IFD.
+- Inbox photo INSERTs now write `captured_at`; includes a `DO UPDATE SET captured_at = ...` for the backfill case on conflict
+- BDD scenarios added (TDD): inbox photo with EXIF has `captured_at` set; without EXIF has `captured_at = NULL`
+- Backfill: ran `make sync-inbox` (re-invokes the processor Lambda for all inbox photos) rather than writing a separate backfill script
+
+**Phase 3 — Searcher**
+- `list_inbox()` ORDER BY changed to `captured_at ASC NULLS LAST, id ASC`
+- Cursor format changed from a bare integer ID to URL-safe base64 JSON `{"c": "<iso_timestamp_or_null>", "id": <int>}` — padding (`=`) stripped for safe use in query strings; frontend passes it back opaquely
+- Legacy integer cursors still accepted for any in-flight pagination from before the change
+- WHERE clause for cursor resume handles four cases: dated photos before undated tail, same date advance by id, later date, both-null tail advance by id
+- `searcher_handler.py`: changed `cursor = int(raw)` to `cursor = qs.get("cursor") or None` (opaque passthrough); added `try/except ValueError` returning 400 for invalid cursors
+- Three new `@local` BDD scenarios in `features/inbox_ordering.feature`: oldest-first ordering, no-EXIF photos last, cursor pagination preserves capture-time order
+
+**Key bugs found and fixed:**
+- EXIF `DateTimeOriginal` not in the main IFD for real Canon EOS R6 photos — required `get_ifd(34665)` (Sub-IFD access)
+- After backfill, all `captured_at` were NULL because the Sub-IFD bug was in production before the fix
+- Infrastructure test photo was inserting with `captured_at = NULL`, sorting it after 1,000+ dated photos and missing the first page — fixed by seeding with `captured_at = '1970-01-01 00:00:00+00'`
+- Step name conflict: `"the inbox listing has a next_cursor"` vs existing `"the inbox response has a next_cursor"` in `searcher_lambda_steps.py` — renamed to avoid collision
+
+### Infinite scroll
+
+**Approach:** Keep all Load More button functionality; add infinite scroll as a toggleable option controlled by a hardcoded `INFINITE_SCROLL` flag in `inbox.html` (defaults `true` in production).
+
+- Added `<div id="scroll-sentinel" style="height:1px;">` after the load-more container
+- `IntersectionObserver` with `rootMargin: '200px'` watches the sentinel and calls `loadInbox(nextCursor)` when visible, if `nextCursor !== null && !isLoading`
+- Feature flag: `const INFINITE_SCROLL = typeof window.INFINITE_SCROLL !== 'undefined' ? window.INFINITE_SCROLL : true;`
+- Existing Load More Playwright tests inject `window.INFINITE_SCROLL = false` via `page.add_init_script()` so the flag doesn't interfere with button click tests
+- New Playwright scenario: "Scrolling to the bottom loads more photos when infinite scroll is enabled" — uses a 400×400 viewport and `window.scrollTo(0, document.body.scrollHeight)` to trigger the observer
+
+### Data integrity tooling
+
+**Three-way audit (`scripts/audit_thumbnails.py`):**
+- Cross-references photos S3 bucket + inbox S3 bucket + thumbnail bucket + DB
+- Revealed the thumbnail count discrepancy (5,119 DB rows vs 4,490 thumbnails) was not missing thumbnails — 627 photos exist in both buckets (same `s3_key`, different `bucket` = 2 DB rows but 1 S3 object each). All S3 photos have thumbnails.
+- Key fix: uses `list(db_rows)` not a dict comprehension — the dict silently dropped duplicate `s3_key` values across buckets
+
+**`scripts/check_thumbnails.py` updated:**
+- Now reports thumbnail counts separately for the processed bucket vs the inbox bucket
+
+### S3 key listing via CLI
+
+For buckets with spaces in key names, `aws s3 ls` breaks because it splits on whitespace. The reliable approach:
+
+```bash
+aws s3api list-objects-v2 --bucket BUCKET_NAME --query 'Contents[].Key' --output text | tr '\t' '\n' | grep -i '\.jpg$'
+```
+
+`--query Contents[].Key` extracts only the key field (handles spaces), `--output text` gives tab-separated values, `tr '\t' '\n'` splits to one key per line.
+
