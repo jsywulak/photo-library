@@ -36,10 +36,28 @@ def step_processor_lambda_deployed(context):
 
 @given("a test photo is uploaded to S3")
 def step_upload_test_photo(context):
+    import hashlib
     bucket = os.environ["S3_BUCKET"]
     # Use the first image available in images/ as the test fixture.
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
+    image_bytes = images[0].read_bytes()
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Pre-clean any stale Neon records with this content_hash left by delayed
+    # EventBridge Lambda invocations from a prior test run whose after_scenario
+    # cleanup committed before the EventBridge Lambda finished inserting.
+    try:
+        conn = neon_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'test-%%'",
+                (content_hash, bucket),
+            )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
     prefix = f"test-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
@@ -49,6 +67,7 @@ def step_upload_test_photo(context):
     context.test_s3_bucket = bucket
     context.test_thumbnail_key = thumbnail_key(s3_key)
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+    context.test_content_hash = content_hash  
 
 
 @when("the Lambda processes the photo")

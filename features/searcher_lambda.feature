@@ -138,3 +138,11 @@ Feature: Searcher Lambda
     Given the searcher Lambda is deployed
     When the Function URL GET /inbox is called with cursor "notanint" and the correct API key
     Then the HTTP response status should be 400
+
+  Scenario: POST /process-inbox uses the content hash as the photos bucket key
+    Given the searcher Lambda is deployed
+    And a photo is uploaded to the inbox bucket and recorded in the database
+    When the Function URL POST /process-inbox is called for the inbox photo with the correct API key
+    Then the HTTP response status should be 200
+    And the photos bucket should contain the photo at its hash-based key
+    And the inbox bucket should no longer contain the original photo

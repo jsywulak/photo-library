@@ -331,6 +331,67 @@ def step_has_captured_at(context, key, expected_dt):
     assert actual == expected, f"Expected captured_at {expected}, got {actual}"
 
 
+@given("the same photo bytes already exist in the photos bucket")
+def step_same_bytes_in_photos_bucket(context):
+    """Seed a photos bucket record with the same content_hash as the inbox photo."""
+    import hashlib
+    from pathlib import Path
+
+    # Find the one file in the temp dir and compute its hash
+    filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
+    assert len(filenames) == 1, "Expected exactly one file in temp dir"
+    image_bytes = (Path(context.location) / filenames[0]).read_bytes()
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    with context.conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO photos (s3_key, bucket, content_hash, processed_at) VALUES (%s, %s, %s, NOW())",
+            (filenames[0], "photo-tagging-photos", content_hash),
+        )
+
+
+@given("the same photo bytes already exist in the photos bucket under a different key")
+def step_same_bytes_in_photos_bucket_different_key(context):
+    """Seed a photos bucket record with the same content_hash but a different s3_key."""
+    import hashlib
+    from pathlib import Path
+
+    filenames = [f for f in os.listdir(context.location) if not f.startswith(".")]
+    assert len(filenames) == 1, "Expected exactly one file in temp dir"
+    image_bytes = (Path(context.location) / filenames[0]).read_bytes()
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Use a different s3_key to simulate a concurrent upload of the same content
+    other_key = "existing_copy_" + filenames[0]
+    with context.conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO photos (s3_key, bucket, content_hash, processed_at) VALUES (%s, %s, %s, NOW())",
+            (other_key, "photo-tagging-photos", content_hash),
+        )
+
+
+@then('"{key}" should have a 64-character content_hash in the database')
+def step_has_content_hash(context, key):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT content_hash FROM photos WHERE s3_key = %s", (db_key,))
+        row = cur.fetchone()
+    assert row, f"{db_key!r} not found in photos table"
+    assert row[0] is not None, f"content_hash is NULL for {db_key!r}"
+    assert len(row[0]) == 64, f"Expected 64-char hex hash, got {len(row[0])!r} chars: {row[0]!r}"
+
+
+@then('"{key}" should have original_filename set in the database')
+def step_has_original_filename(context, key):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT original_filename FROM photos WHERE s3_key = %s", (db_key,))
+        row = cur.fetchone()
+    assert row, f"{db_key!r} not found in photos table"
+    assert row[0] is not None, f"original_filename is NULL for {db_key!r}"
+    assert row[0] == db_key, f"Expected original_filename={db_key!r}, got {row[0]!r}"
+
+
 @then('"{key}" should have captured_at NULL in the database')
 def step_has_null_captured_at(context, key):
     db_key = context.key_map.get(key, key)

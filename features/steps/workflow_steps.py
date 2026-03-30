@@ -13,7 +13,9 @@ Cleanup is handled automatically by environment.py via context.test_s3_key,
 context.test_s3_bucket, context.test_thumbnail_key, and context.test_thumbnail_bucket.
 """
 
+import hashlib
 import os
+import struct
 import time
 import uuid
 from pathlib import Path
@@ -28,18 +30,64 @@ from common import neon_conn, thumbnail_key as _thumbnail_key
 IMAGES_DIR = Path(__file__).parents[2] / "images"
 
 
+def _make_unique_jpeg(image_bytes: bytes) -> bytes:
+    """Insert a JPEG comment block containing a UUID before the EOI marker.
+
+    This produces a unique SHA-256 hash per run while keeping the image valid
+    and processable by Anthropic.  Comment blocks (FF FE) are ignored by image
+    decoders.
+    """
+    assert image_bytes[-2:] == b"\xff\xd9", "Not a valid JPEG (missing EOI marker)"
+    uid = uuid.uuid4().bytes  # 16 bytes, always unique
+    comment_data = b"test-run-" + uid
+    length = len(comment_data) + 2  # length field includes itself
+    com_block = b"\xff\xfe" + struct.pack(">H", length) + comment_data
+    return image_bytes[:-2] + com_block + b"\xff\xd9"
+
+
 @given("a photo is uploaded to the photos bucket")
 def step_upload_photo(context):
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
 
+    # Make the image bytes unique per run so the Lambda never treats this upload
+    # as a duplicate of an already-processed production photo.
+    image_bytes = _make_unique_jpeg(images[0].read_bytes())
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
     s3_key = f"test-{uuid.uuid4().hex[:8]}-{images[0].name}"
     bucket = os.environ["S3_BUCKET"]
 
-    boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
+    # Pre-clean: remove all stale test- S3 objects and Neon records from the
+    # photos bucket before uploading. The workflow test runs last — any remaining
+    # test- objects are genuinely stale (S3 delete failed silently in a prior
+    # scenario's cleanup). Without this, a delayed EventBridge invocation for a
+    # stale object can race with the workflow Lambda and win the content_hash
+    # insert, causing the workflow Lambda to return "skipped" with no DB record.
+    try:
+        s3_client = boto3.client("s3")
+        paginator = s3_client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix="test-"):
+            for obj in page.get("Contents", []):
+                s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
+    except Exception:
+        pass
+    try:
+        conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM photos WHERE bucket = %s AND s3_key LIKE 'test-%%'",
+                (bucket,),
+            )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+    boto3.client("s3").put_object(Bucket=bucket, Key=s3_key, Body=image_bytes, ContentType="image/jpeg")
 
     context.test_s3_key = s3_key
     context.test_s3_bucket = bucket
+    context.test_content_hash = content_hash
     context.test_thumbnail_key = _thumbnail_key(s3_key)
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
 

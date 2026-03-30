@@ -63,3 +63,27 @@ Feature: Photo processing pipeline
     Given a local directory with a JPEG without EXIF named "photo_no_exif.jpg"
     When the processor runs for bucket "photo-tagging-inbox"
     Then "photo_no_exif.jpg" should have captured_at NULL in the database
+
+  Scenario: Inbox photo arrival stores content_hash in DB
+    Given a local directory with a JPEG without EXIF named "hashed.jpg"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then "hashed.jpg" should have a 64-character content_hash in the database
+
+  Scenario: Inbox photo arrival stores original_filename in DB
+    Given a local directory with a JPEG without EXIF named "named.jpg"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then "named.jpg" should have original_filename set in the database
+
+  Scenario: Photo with duplicate content is skipped when it already exists in the photos bucket
+    Given a local directory with a JPEG without EXIF named "duplicate.jpg"
+    And the same photo bytes already exist in the photos bucket
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then 0 photos should be processed
+    And 1 photo should be skipped
+
+  Scenario: Uploading duplicate content to the photos bucket under a different key is skipped
+    Given a local directory with a JPEG without EXIF named "photo_copy.jpg"
+    And the same photo bytes already exist in the photos bucket under a different key
+    When the processor runs for bucket "photo-tagging-photos"
+    Then 0 photos should be processed
+    And 1 photo should be skipped

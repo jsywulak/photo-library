@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-searcher deploy-searcher package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -47,6 +47,7 @@ help:
 	@echo "  make neon-clean-orphans     Delete DB records with no matching S3 object"
 	@echo "  make neon-clean-thumbnail-orphans Delete thumbnails with no matching photo"
 	@echo "  make neon-overwrite-check   Detect photos whose S3 object was replaced after processing"
+	@echo "  make migrate-to-hashes      Rename S3 objects to hash keys, re-tag suspect photos, backfill inbox"
 
 
 install: install-hooks
@@ -167,6 +168,9 @@ neon-clean-orphans:
 
 neon-overwrite-check:
 	python scripts/overwrite_check.py
+
+migrate-to-hashes:
+	python scripts/migrate_to_hashes.py
 
 backfill-thumbnails:
 	python scripts/backfill_thumbnails.py

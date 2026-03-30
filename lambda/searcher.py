@@ -112,17 +112,27 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
 
 
 def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, photos_bucket: str) -> bool:
-    """Copy photo from inbox to photos bucket, delete from inbox, remove DB record.
-    Returns False if the photo was not found in the DB.
+    """Copy photo from inbox to photos bucket using content hash as the destination key.
+
+    The content_hash stored on the inbox record becomes the permanent S3 key
+    in the photos bucket ({hash}.jpg), giving collision-free identity regardless
+    of original filename. Returns False if the photo was not found in the DB.
     """
     with db_conn.cursor() as cur:
-        cur.execute("SELECT id FROM photos WHERE s3_key = %s AND bucket = %s", (s3_key, inbox_bucket))
-        if not cur.fetchone():
+        cur.execute(
+            "SELECT id, content_hash FROM photos WHERE s3_key = %s AND bucket = %s",
+            (s3_key, inbox_bucket),
+        )
+        row = cur.fetchone()
+        if not row:
             return False
+        content_hash = row[1]
+
+    dest_key = f"{content_hash}.jpg"
     s3_client.copy_object(
         CopySource={"Bucket": inbox_bucket, "Key": s3_key},
         Bucket=photos_bucket,
-        Key=s3_key,
+        Key=dest_key,
     )
     s3_client.delete_object(Bucket=inbox_bucket, Key=s3_key)
     with db_conn.cursor() as cur:

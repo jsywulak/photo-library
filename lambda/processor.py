@@ -9,6 +9,7 @@ the transaction.
 """
 
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -186,22 +187,46 @@ def process_one(
         return "unsupported"
 
     captured_at = _extract_captured_at(image_bytes) if bucket != _DEFAULT_BUCKET else None
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Duplicate detection: skip if the same content already exists in the photos bucket.
+    # - Inbox photos: skip when the content has already been promoted to the photos bucket.
+    # - Photos bucket: skip when the same bytes arrive under a different s3_key (e.g.,
+    #   concurrent EventBridge triggers), preventing a UniqueViolation on content_hash+bucket.
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "SELECT s3_key FROM photos WHERE content_hash = %s AND bucket = %s",
+            (content_hash, _DEFAULT_BUCKET),
+        )
+        existing = cur.fetchone()
+        if existing and (bucket != _DEFAULT_BUCKET or existing[0] != s3_key):
+            logger.info("Duplicate content detected for %s (hash %s already in photos bucket as %s), skipping",
+                        s3_key, content_hash[:8], existing[0])
+            return "skipped"
 
     with db_conn.cursor() as cur:
-        # Atomically claim the row. ON CONFLICT means it's already processed.
+        # Atomically claim the row. ON CONFLICT DO NOTHING suppresses conflicts on
+        # both (s3_key, bucket) and (content_hash, bucket) unique constraints.
         cur.execute(
-            "INSERT INTO photos (s3_key, bucket, captured_at) VALUES (%s, %s, %s)"
-            " ON CONFLICT (s3_key, bucket) DO NOTHING RETURNING id",
-            (s3_key, bucket, captured_at),
+            "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename)"
+            " VALUES (%s, %s, %s, %s, %s)"
+            " ON CONFLICT DO NOTHING RETURNING id",
+            (s3_key, bucket, captured_at, content_hash, s3_key),
         )
         row = cur.fetchone()
         if row is None:
-            # Row already exists. Skip if successfully processed; retry if previously failed.
+            # No row returned — conflict on (s3_key, bucket) or (content_hash, bucket).
             cur.execute(
                 "SELECT id, processed_at FROM photos WHERE s3_key = %s AND bucket = %s",
                 (s3_key, bucket),
             )
-            photo_id, processed_at = cur.fetchone()
+            existing = cur.fetchone()
+            if existing is None:
+                # content_hash+bucket conflict with a different s3_key — duplicate content
+                # arrived concurrently; the other invocation will handle it.
+                logger.info("Duplicate content conflict for %s (hash %s), skipping", s3_key, content_hash[:8])
+                return "skipped"
+            photo_id, processed_at = existing
             if processed_at is not None:
                 return "skipped"
             # Backfill captured_at on existing inbox rows that don't have it yet.

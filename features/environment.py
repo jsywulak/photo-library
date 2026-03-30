@@ -66,6 +66,13 @@ def after_scenario(context, scenario):
                     "DELETE FROM photos WHERE s3_key = %s AND bucket = %s",
                     (context.test_s3_key, context.test_s3_bucket),
                 )
+                # Also clean up by content_hash to catch records reinserted by delayed
+                # EventBridge Lambda invocations that fired after the primary s3_key cleanup.
+                if hasattr(context, "test_content_hash"):
+                    cur.execute(
+                        "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'test-%%'",
+                        (context.test_content_hash, context.test_s3_bucket),
+                    )
                 cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
             conn.commit()
             conn.close()

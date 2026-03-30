@@ -263,6 +263,8 @@ _MINIMAL_JPEG = (
 
 @given("a photo is uploaded to the inbox bucket and recorded in the database")
 def step_upload_to_inbox_with_db(context):
+    import hashlib
+
     if not hasattr(context, "searcher_s3_uploads"):
         context.searcher_s3_uploads = []
     if not hasattr(context, "neon_test_s3_keys"):
@@ -271,6 +273,7 @@ def step_upload_to_inbox_with_db(context):
     prefix = f"test-{uuid.uuid4().hex[:8]}-"
     s3_key = f"{prefix}photo.jpg"
     bucket = os.environ["INBOX_BUCKET"]
+    content_hash = hashlib.sha256(_MINIMAL_JPEG).hexdigest()
 
     boto3.client("s3").put_object(
         Bucket=bucket, Key=s3_key, Body=_MINIMAL_JPEG, ContentType="image/jpeg"
@@ -281,15 +284,22 @@ def step_upload_to_inbox_with_db(context):
     with conn.cursor() as cur:
         # Use a far-past captured_at so this test photo sorts first in the
         # capture-time ordered inbox regardless of other photos in the DB.
+        # ON CONFLICT (content_hash, bucket) DO UPDATE ensures the DB record always
+        # reflects the current run's s3_key, even if a stale record from a prior
+        # failed cleanup shares the same content_hash. Without this, ON CONFLICT DO
+        # NOTHING would silently skip the insert, leaving the new S3 object with no
+        # DB record and causing the /process-inbox Lambda to return 404.
         cur.execute(
-            "INSERT INTO photos (s3_key, bucket, captured_at) VALUES (%s, %s, '1970-01-01 00:00:00+00') ON CONFLICT DO NOTHING",
-            (s3_key, bucket),
+            "INSERT INTO photos (s3_key, bucket, captured_at, content_hash) VALUES (%s, %s, '1970-01-01 00:00:00+00', %s)"
+            " ON CONFLICT (content_hash, bucket) DO UPDATE SET s3_key = EXCLUDED.s3_key, captured_at = EXCLUDED.captured_at",
+            (s3_key, bucket, content_hash),
         )
     conn.commit()
     conn.close()
 
     context.neon_test_s3_keys.append(s3_key)
     context.inbox_s3_key = s3_key
+    context.inbox_content_hash = content_hash
 
 
 @when("the Function URL GET /inbox is called with the correct API key")
@@ -471,6 +481,45 @@ def step_inbox_no_overlap(context):
     previous_keys = getattr(context, "inbox_last_page_keys", set())
     overlap = current_keys & previous_keys
     assert not overlap, f"Pages overlap on keys: {overlap}"
+
+
+@when("the Function URL POST /process-inbox is called for the inbox photo with the correct API key")
+def step_process_inbox_photo(context):
+    context.http_status, context.http_body = _api_post("/process-inbox", {"s3_key": context.inbox_s3_key})
+
+
+@then("the photos bucket should contain the photo at its hash-based key")
+def step_photos_bucket_has_hash_key(context):
+    from botocore.exceptions import ClientError
+
+    hash_key = f"{context.inbox_content_hash}.jpg"
+    context.promoted_hash_key = hash_key
+
+    photos_bucket = os.environ["S3_BUCKET"]
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    context.searcher_s3_uploads.append((photos_bucket, hash_key))
+    context.neon_test_s3_keys.append(hash_key)
+
+    try:
+        boto3.client("s3").head_object(Bucket=photos_bucket, Key=hash_key)
+    except ClientError as e:
+        assert False, f"Expected {hash_key!r} in photos bucket {photos_bucket!r}, but got: {e}"
+
+
+@then("the inbox bucket should no longer contain the original photo")
+def step_inbox_no_longer_has_photo(context):
+    from botocore.exceptions import ClientError
+
+    inbox_bucket = os.environ["INBOX_BUCKET"]
+    try:
+        boto3.client("s3").head_object(Bucket=inbox_bucket, Key=context.inbox_s3_key)
+        assert False, f"Expected {context.inbox_s3_key!r} to be deleted from inbox bucket but it still exists"
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        assert error_code in ("404", "NoSuchKey"), f"Unexpected S3 error: {e}"
 
 
 @then("the presigned URL for the photo should return HTTP 200")
