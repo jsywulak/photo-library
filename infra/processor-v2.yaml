@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Photo Tagger — Processor Lambda
+Description: Photo Tagger — Processor v2 Lambda
 
 Parameters:
   DeploymentBucket:
@@ -8,7 +8,7 @@ Parameters:
 
   DeploymentKey:
     Type: String
-    Default: processor.zip
+    Default: processor-v2.zip
     Description: S3 key of the Lambda deployment zip
 
   NeonDatabaseUrl:
@@ -30,7 +30,7 @@ Parameters:
     Description: S3 bucket for unprocessed inbox photos
 
 Resources:
-  ProcessorRole:
+  ProcessorV2Role:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -58,13 +58,13 @@ Resources:
                   - !Sub 'arn:aws:s3:::${PhotosBucket}'
                   - !Sub 'arn:aws:s3:::${InboxBucket}'
 
-  ProcessorFunction:
+  ProcessorV2Function:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${AWS::StackName}-processor'
       Runtime: python3.12
       Handler: handler.lambda_handler
-      Role: !GetAtt ProcessorRole.Arn
+      Role: !GetAtt ProcessorV2Role.Arn
       Timeout: 120
       MemorySize: 512
       ReservedConcurrentExecutions: 10
@@ -76,12 +76,36 @@ Resources:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
 
+  ProcessorV2EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref PhotosBucket
+              - !Ref InboxBucket
+      Targets:
+        - Id: ProcessorV2LambdaTarget
+          Arn: !GetAtt ProcessorV2Function.Arn
+
+  ProcessorV2EventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ProcessorV2Function.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ProcessorV2EventBridgeRule.Arn
 
 Outputs:
-  ProcessorFunctionName:
-    Description: Lambda function name (use as PROCESSOR_LAMBDA_NAME in .env)
-    Value: !Ref ProcessorFunction
+  ProcessorV2FunctionName:
+    Description: Lambda function name (use as PROCESSOR_V2_LAMBDA_NAME in .env)
+    Value: !Ref ProcessorV2Function
 
-  ProcessorFunctionArn:
-    Description: Lambda function ARN (used by photos-bucket stack for S3 notifications)
-    Value: !GetAtt ProcessorFunction.Arn
+  ProcessorV2FunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ProcessorV2Function.Arn

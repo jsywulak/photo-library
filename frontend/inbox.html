@@ -156,7 +156,7 @@
     // Can also be overridden by setting window.INFINITE_SCROLL before the script loads.
     const INFINITE_SCROLL = typeof window.INFINITE_SCROLL !== 'undefined' ? window.INFINITE_SCROLL : true;
 
-    const BASE_URL   = SEARCHER_URL.replace(/\/$/, '');
+    const BASE_URL   = (typeof INBOX_URL !== 'undefined' ? INBOX_URL : SEARCHER_URL).replace(/\/$/, '');
     const status     = document.getElementById('status');
     const grid       = document.getElementById('photo-grid');
     const inboxCount = document.getElementById('inbox-count');

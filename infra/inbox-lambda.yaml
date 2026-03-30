@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Photo Tagger — Searcher Lambda
+Description: Photo Tagger — Inbox Lambda
 
 Parameters:
   DeploymentBucket:
@@ -8,7 +8,7 @@ Parameters:
 
   DeploymentKey:
     Type: String
-    Default: searcher.zip
+    Default: inbox.zip
     Description: S3 key of the Lambda deployment zip
 
   NeonDatabaseUrl:
@@ -23,15 +23,19 @@ Parameters:
 
   PhotosBucket:
     Type: String
-    Description: S3 bucket containing the photos (for presigned URL generation)
+    Description: S3 bucket to promote processed photos into
 
   ThumbnailBucket:
     Type: String
     Default: photo-tagging-thumbnails
     Description: Public S3 bucket containing thumbnails
 
+  InboxBucket:
+    Type: String
+    Description: S3 bucket containing unprocessed photos
+
 Resources:
-  SearcherRole:
+  InboxRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -44,22 +48,30 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: S3PresignedUrlPolicy
+        - PolicyName: InboxS3Policy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - s3:GetObject
+                  - s3:PutObject
                 Resource: !Sub 'arn:aws:s3:::${PhotosBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${InboxBucket}'
+                  - !Sub 'arn:aws:s3:::${InboxBucket}/*'
 
-  SearcherFunction:
+  InboxFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${AWS::StackName}-searcher'
+      FunctionName: !Sub '${AWS::StackName}-inbox'
       Runtime: python3.12
-      Handler: searcher_handler.lambda_handler
-      Role: !GetAtt SearcherRole.Arn
+      Handler: inbox_handler.lambda_handler
+      Role: !GetAtt InboxRole.Arn
       Timeout: 30
       MemorySize: 256
       Code:
@@ -69,19 +81,20 @@ Resources:
         Variables:
           NEON_DATABASE_URL: !Ref NeonDatabaseUrl
           API_KEY: !Ref ApiKey
-          S3_BUCKET: !Ref PhotosBucket
+          PHOTOS_BUCKET: !Ref PhotosBucket
           THUMBNAIL_BUCKET: !Ref ThumbnailBucket
+          INBOX_BUCKET: !Ref InboxBucket
 
-  SearcherFunctionUrl:
+  InboxFunctionUrl:
     Type: AWS::Lambda::Url
     Properties:
       AuthType: NONE
-      TargetFunctionArn: !GetAtt SearcherFunction.Arn
+      TargetFunctionArn: !GetAtt InboxFunction.Arn
 
-  SearcherFunctionUrlPermission:
+  InboxFunctionUrlPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt SearcherFunction.Arn
+      FunctionName: !GetAtt InboxFunction.Arn
       Action: lambda:InvokeFunctionUrl
       Principal: "*"
       FunctionUrlAuthType: NONE
@@ -89,19 +102,19 @@ Resources:
   # Required alongside InvokeFunctionUrl — Lambda URL invocations need both.
   # The InvokedViaFunctionUrl condition restricts this to URL-triggered calls only,
   # preventing direct lambda:InvokeFunction calls that would bypass the API key check.
-  SearcherFunctionInvokeViaUrlPermission:
+  InboxFunctionInvokeViaUrlPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt SearcherFunction.Arn
+      FunctionName: !GetAtt InboxFunction.Arn
       Action: lambda:InvokeFunction
       Principal: "*"
       InvokedViaFunctionUrl: true
 
 Outputs:
-  SearcherFunctionName:
-    Description: Lambda function name (use as SEARCHER_LAMBDA_NAME in .env)
-    Value: !Ref SearcherFunction
+  InboxFunctionName:
+    Description: Lambda function name (use as INBOX_LAMBDA_NAME in .env)
+    Value: !Ref InboxFunction
 
-  SearcherFunctionUrl:
-    Description: HTTP endpoint for the searcher (use as SEARCHER_URL in .env)
-    Value: !GetAtt SearcherFunctionUrl.FunctionUrl
+  InboxFunctionUrl:
+    Description: HTTP endpoint for the inbox lambda (use as INBOX_URL in .env)
+    Value: !GetAtt InboxFunctionUrl.FunctionUrl

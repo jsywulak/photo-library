@@ -1,7 +1,7 @@
 """
 Step definitions for inbox_ordering.feature.
 
-Calls list_inbox() directly against the local DB with a stub S3 client.
+Calls list_inbox() from inbox.py directly against the local DB with a stub S3 client.
 """
 
 import sys
@@ -44,8 +44,8 @@ def step_inbox_photo_no_captured_at(context, s3_key):
 
 @when("I list the inbox")
 def step_list_inbox(context):
-    import searcher
-    context.inbox_result = searcher.list_inbox(
+    import inbox
+    context.inbox_result = inbox.list_inbox(
         context.conn, _FakeS3(), INBOX_BUCKET, THUMBNAIL_BUCKET
     )
     context.inbox_cursor = None
@@ -53,8 +53,8 @@ def step_list_inbox(context):
 
 @when("I list the inbox with limit {limit:d}")
 def step_list_inbox_with_limit(context, limit):
-    import searcher
-    context.inbox_result = searcher.list_inbox(
+    import inbox
+    context.inbox_result = inbox.list_inbox(
         context.conn, _FakeS3(), INBOX_BUCKET, THUMBNAIL_BUCKET, limit=limit
     )
     context.inbox_cursor = context.inbox_result.get("next_cursor")
@@ -62,8 +62,8 @@ def step_list_inbox_with_limit(context, limit):
 
 @when("I list the inbox with the next cursor and limit {limit:d}")
 def step_list_inbox_with_cursor(context, limit):
-    import searcher
-    context.inbox_result = searcher.list_inbox(
+    import inbox
+    context.inbox_result = inbox.list_inbox(
         context.conn, _FakeS3(), INBOX_BUCKET, THUMBNAIL_BUCKET,
         limit=limit, cursor=context.inbox_cursor
     )

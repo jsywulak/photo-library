@@ -21,7 +21,7 @@ import boto3
 import psycopg2
 from botocore.config import Config
 
-from searcher import _INBOX_PAGE_SIZE, add_tags, archive_inbox_photo, get_random_tags, list_inbox, process_inbox_photo, remove_tag, search
+from searcher import add_tags, get_random_tags, remove_tag, search
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -31,7 +31,6 @@ _DB_URL = get_required_env("NEON_DATABASE_URL")
 _API_KEY = get_required_env("API_KEY")
 _S3_BUCKET = get_required_env("S3_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
-_INBOX_BUCKET = get_required_env("INBOX_BUCKET")
 
 _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
@@ -85,22 +84,6 @@ def lambda_handler(event, context):
             with _db() as conn:
                 return _http_response(200, get_random_tags(conn))
 
-        if method == "GET" and path == "/inbox":
-            qs = event.get("queryStringParameters") or {}
-            cursor = qs.get("cursor") or None  # pass opaque string through to list_inbox
-            limit = _INBOX_PAGE_SIZE
-            try:
-                raw = qs.get("limit")
-                if raw is not None:
-                    limit = max(1, min(int(raw), 200))
-            except (ValueError, TypeError):
-                return _http_response(400, {"error": "limit must be an integer"})
-            try:
-                with _db() as conn:
-                    return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor))
-            except ValueError as e:
-                return _http_response(400, {"error": str(e)})
-
         if method == "POST" and path == "/add-tags":
             payload = _parse_body(event)
             if payload is None:
@@ -128,34 +111,6 @@ def lambda_handler(event, context):
                 found = remove_tag(s3_key, tag, conn)
                 conn.commit()
                 return _http_response(200, {"removed": found})
-
-        if method == "POST" and path == "/process-inbox":
-            payload = _parse_body(event)
-            if payload is None:
-                return _http_response(400, {"error": "Invalid JSON body"})
-            s3_key = payload.get("s3_key")
-            if not s3_key:
-                return _http_response(400, {"error": "s3_key is required"})
-            with _db() as conn:
-                found = process_inbox_photo(s3_key, conn, _s3_client, _INBOX_BUCKET, _S3_BUCKET)
-                if not found:
-                    return _http_response(404, {"error": "Photo not found"})
-                conn.commit()
-                return _http_response(200, {"success": True})
-
-        if method == "POST" and path == "/archive-inbox":
-            payload = _parse_body(event)
-            if payload is None:
-                return _http_response(400, {"error": "Invalid JSON body"})
-            s3_key = payload.get("s3_key")
-            if not s3_key:
-                return _http_response(400, {"error": "s3_key is required"})
-            with _db() as conn:
-                found = archive_inbox_photo(s3_key, conn, _INBOX_BUCKET)
-                if not found:
-                    return _http_response(404, {"error": "Photo not found"})
-                conn.commit()
-                return _http_response(200, {"success": True})
 
         payload = _parse_body(event)
         if payload is None:
