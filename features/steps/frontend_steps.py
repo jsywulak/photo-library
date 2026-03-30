@@ -97,6 +97,7 @@ def step_search_returns_n(context, n):
 def step_open_inbox(context):
     page = context.browser.new_page()
     context.page = page
+    page.add_init_script("window.INFINITE_SCROLL = false;")
 
     def handle_lambda(route, request):
         if "/process-inbox" in request.url:

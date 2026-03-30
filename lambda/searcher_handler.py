@@ -87,22 +87,19 @@ def lambda_handler(event, context):
 
         if method == "GET" and path == "/inbox":
             qs = event.get("queryStringParameters") or {}
-            cursor = None
+            cursor = qs.get("cursor") or None  # pass opaque string through to list_inbox
             limit = _INBOX_PAGE_SIZE
-            try:
-                raw = qs.get("cursor")
-                if raw is not None:
-                    cursor = int(raw)
-            except (ValueError, TypeError):
-                return _http_response(400, {"error": "cursor must be an integer"})
             try:
                 raw = qs.get("limit")
                 if raw is not None:
                     limit = max(1, min(int(raw), 200))
             except (ValueError, TypeError):
                 return _http_response(400, {"error": "limit must be an integer"})
-            with _db() as conn:
-                return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor))
+            try:
+                with _db() as conn:
+                    return _http_response(200, list_inbox(conn, _s3_client, _INBOX_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor))
+            except ValueError as e:
+                return _http_response(400, {"error": str(e)})
 
         if method == "POST" and path == "/add-tags":
             payload = _parse_body(event)

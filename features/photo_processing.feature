@@ -53,3 +53,13 @@ Feature: Photo processing pipeline
     When the processor runs for bucket "photo-tagging-inbox"
     Then 1 photo should be processed
     And "photo1.jpg" should be saved to the database with bucket "photo-tagging-inbox"
+
+  Scenario: Inbox photos have captured_at populated from EXIF DateTimeOriginal
+    Given a local directory with a JPEG with EXIF DateTimeOriginal "2024:03:15 10:30:00" named "photo_with_exif.jpg"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then "photo_with_exif.jpg" should have captured_at "2024-03-15 10:30:00" in the database
+
+  Scenario: Inbox photos without EXIF have captured_at as NULL
+    Given a local directory with a JPEG without EXIF named "photo_no_exif.jpg"
+    When the processor runs for bucket "photo-tagging-inbox"
+    Then "photo_no_exif.jpg" should have captured_at NULL in the database

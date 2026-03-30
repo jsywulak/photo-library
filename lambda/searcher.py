@@ -9,11 +9,45 @@ Each result includes:
   - thumbnail_url: a public URL to the WebP thumbnail in the thumbnail bucket
 """
 
+import base64
+import json
+
 from utils import thumbnail_key as _thumbnail_key
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
 _INBOX_PAGE_SIZE = 50
+
+
+def _encode_cursor(captured_at, row_id: int) -> str:
+    """Encode (captured_at, id) as an opaque URL-safe base64 JSON cursor.
+
+    Padding (=) is stripped so the value is safe in query strings without
+    percent-encoding. _decode_cursor re-adds padding before decoding.
+    """
+    c = captured_at.isoformat() if captured_at is not None else None
+    return base64.urlsafe_b64encode(json.dumps({"c": c, "id": row_id}).encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor) -> tuple:
+    """Decode cursor → (captured_at_str_or_none, id).
+
+    Accepts the new base64-JSON format or a legacy bare integer (for
+    backwards compatibility with any in-flight cursors from before the
+    ordering change).
+    """
+    if cursor is None:
+        return None, None
+    # Legacy integer cursor
+    if isinstance(cursor, int):
+        return None, cursor
+    try:
+        # Re-add stripped padding
+        padded = cursor + "=" * (-len(cursor) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        return decoded["c"], decoded["id"]
+    except Exception:
+        raise ValueError(f"Invalid cursor: {cursor!r}")
 
 
 def _normalise_tags(tags: list[str]) -> list[str]:
@@ -25,7 +59,9 @@ def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
 
 
 def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
-               limit: int = _INBOX_PAGE_SIZE, cursor: int | None = None) -> dict:
+               limit: int = _INBOX_PAGE_SIZE, cursor=None) -> dict:
+    cursor_c, cursor_id = _decode_cursor(cursor)
+
     with db_conn.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM photos WHERE bucket = %s AND archived_at IS NULL",
@@ -34,20 +70,34 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
         total = cur.fetchone()[0]
         cur.execute(
             """
-            SELECT id, s3_key FROM photos
-            WHERE bucket = %s AND archived_at IS NULL AND (%s IS NULL OR id < %s)
-            ORDER BY id DESC LIMIT %s
+            SELECT id, s3_key, captured_at FROM photos
+            WHERE bucket = %s AND archived_at IS NULL AND (
+                %s IS NULL AND %s IS NULL  -- no cursor: first page
+                OR (captured_at IS NOT NULL AND %s IS NULL)  -- dated before undated tail
+                OR (captured_at = %s AND id > %s)            -- same date, advance by id
+                OR (captured_at > %s)                         -- later date
+                OR (captured_at IS NULL AND %s IS NULL AND id > %s)  -- both null tail
+            )
+            ORDER BY captured_at ASC NULLS LAST, id ASC
+            LIMIT %s
             """,
-            (inbox_bucket, cursor, cursor, limit + 1),
+            (inbox_bucket,
+             cursor_c, cursor_id,
+             cursor_c,
+             cursor_c, cursor_id,
+             cursor_c,
+             cursor_c, cursor_id,
+             limit + 1),
         )
         rows = cur.fetchall()
 
     has_more = len(rows) > limit
     rows = rows[:limit]
-    next_cursor = rows[-1][0] if has_more else None
+    last = rows[-1] if (has_more and rows) else None
+    next_cursor = _encode_cursor(last[2], last[0]) if last else None
 
     items = []
-    for row_id, key in rows:
+    for row_id, key, _captured_at in rows:
         url = s3_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": inbox_bucket, "Key": key},

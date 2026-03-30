@@ -123,6 +123,44 @@ def step_corrupted_oversized_image(context, filename):
     context.location = tmp
 
 
+@given('a local directory with a JPEG with EXIF DateTimeOriginal "{exif_datetime}" named "{filename}"')
+def step_jpeg_with_exif(context, exif_datetime, filename):
+    """Create a minimal JPEG with a DateTimeOriginal EXIF tag."""
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color=(80, 80, 80))
+    exif = img.getexif()
+    exif[36867] = exif_datetime  # DateTimeOriginal tag ID
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif.tobytes())
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    (Path(tmp) / (prefix + filename)).write_bytes(buf.getvalue())
+    context.location = tmp
+
+
+@given('a local directory with a JPEG without EXIF named "{filename}"')
+def step_jpeg_without_exif(context, filename):
+    """Create a minimal JPEG with no EXIF data."""
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color=(80, 80, 80))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+
+    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    (Path(tmp) / (prefix + filename)).write_bytes(buf.getvalue())
+    context.location = tmp
+
+
 @given('a local directory with an unsupported file "{filename}"')
 def step_unsupported_file(context, filename):
     prefix = f"test-{uuid.uuid4().hex[:8]}-"
@@ -277,6 +315,30 @@ def step_log_includes_filename(context, filename):
         f"Expected log message containing {db_key!r} but got:\n"
         + "\n".join(context.captured_logs)
     )
+
+
+@then('"{key}" should have captured_at "{expected_dt}" in the database')
+def step_has_captured_at(context, key, expected_dt):
+    from datetime import datetime
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT captured_at FROM photos WHERE s3_key = %s", (db_key,))
+        row = cur.fetchone()
+    assert row, f"{db_key!r} not found in photos table"
+    assert row[0] is not None, f"captured_at is NULL for {db_key!r}"
+    expected = datetime.strptime(expected_dt, "%Y-%m-%d %H:%M:%S")
+    actual = row[0].replace(tzinfo=None)
+    assert actual == expected, f"Expected captured_at {expected}, got {actual}"
+
+
+@then('"{key}" should have captured_at NULL in the database')
+def step_has_null_captured_at(context, key):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT captured_at FROM photos WHERE s3_key = %s", (db_key,))
+        row = cur.fetchone()
+    assert row, f"{db_key!r} not found in photos table"
+    assert row[0] is None, f"Expected captured_at to be NULL for {db_key!r}, got {row[0]}"
 
 
 @then('"{key}" should have tags in the database')

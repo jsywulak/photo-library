@@ -279,8 +279,10 @@ def step_upload_to_inbox_with_db(context):
 
     conn = neon_conn()
     with conn.cursor() as cur:
+        # Use a far-past captured_at so this test photo sorts first in the
+        # capture-time ordered inbox regardless of other photos in the DB.
         cur.execute(
-            "INSERT INTO photos (s3_key, bucket) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            "INSERT INTO photos (s3_key, bucket, captured_at) VALUES (%s, %s, '1970-01-01 00:00:00+00') ON CONFLICT DO NOTHING",
             (s3_key, bucket),
         )
     conn.commit()
