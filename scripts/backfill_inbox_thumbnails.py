@@ -24,28 +24,29 @@ INBOX_BUCKET = os.environ["INBOX_BUCKET"]
 CONCURRENCY = 20
 
 
-def fetch_inbox_keys(conn, inbox_bucket: str) -> list[str]:
+def fetch_inbox_keys(conn, inbox_bucket: str) -> list[tuple[str, str]]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT s3_key FROM photos WHERE bucket = %s ORDER BY s3_key",
+            "SELECT s3_key, content_hash FROM photos WHERE bucket = %s ORDER BY s3_key",
             (inbox_bucket,),
         )
-        return [row[0] for row in cur.fetchall()]
+        return cur.fetchall()
 
 
-def run_inbox_backfill(s3_keys: list[str], inbox_bucket: str, lambda_client, lambda_name: str) -> dict:
+def run_inbox_backfill(rows: list[tuple[str, str]], inbox_bucket: str, lambda_client, lambda_name: str) -> dict:
     """Invoke the thumbnailer Lambda for each inbox key. Returns thumbnailed/skipped/failed counts."""
     thumbnailed = skipped = failed = 0
     lock = threading.Lock()
 
-    def process(s3_key):
+    def process(s3_key, content_hash):
         result = invoke_lambda(
-            lambda_client, lambda_name, {"s3_key": s3_key, "source_bucket": inbox_bucket}
+            lambda_client, lambda_name,
+            {"s3_key": s3_key, "source_bucket": inbox_bucket, "content_hash": content_hash},
         )
         return result.get("status")
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
-        futures = {executor.submit(process, key): key for key in s3_keys}
+        futures = {executor.submit(process, key, hash_): key for key, hash_ in rows}
         for future in as_completed(futures):
             s3_key = futures[future]
             try:
@@ -67,17 +68,17 @@ def run_inbox_backfill(s3_keys: list[str], inbox_bucket: str, lambda_client, lam
 
 def main():
     with db_connection(NEON_DATABASE_URL) as conn:
-        keys = fetch_inbox_keys(conn, INBOX_BUCKET)
+        rows = fetch_inbox_keys(conn, INBOX_BUCKET)
 
-    if not keys:
+    if not rows:
         print("No inbox photos found.")
         return
 
-    print(f"Found {len(keys)} inbox photos. Generating thumbnails...\n")
+    print(f"Found {len(rows)} inbox photos. Generating thumbnails...\n")
 
     lam = boto3.client("lambda")
     result = run_inbox_backfill(
-        s3_keys=keys,
+        rows=rows,
         inbox_bucket=INBOX_BUCKET,
         lambda_client=lam,
         lambda_name=THUMBNAILER_LAMBDA_NAME,

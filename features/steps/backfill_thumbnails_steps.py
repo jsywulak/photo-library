@@ -11,6 +11,7 @@ and asserts the thumbnail was created. Cleanup is handled by environment.py via
 context.searcher_s3_uploads, context.neon_test_s3_keys, and context.test_thumbnail_*.
 """
 
+import hashlib
 import os
 import sys
 import uuid
@@ -68,19 +69,21 @@ def step_inbox_photo_in_db_and_s3(context):
 
     prefix = f"test-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
+    content_hash = hashlib.sha256(images[0].read_bytes()).hexdigest()
 
     boto3.client("s3").upload_file(str(images[0]), inbox_bucket, s3_key)
     context.searcher_s3_uploads.append((inbox_bucket, s3_key))
 
     conn = neon_conn()
-    seed_photo(conn, s3_key, [], bucket=inbox_bucket)
+    seed_photo(conn, s3_key, [], bucket=inbox_bucket, content_hash=content_hash)
     conn.commit()
     conn.close()
 
     context.neon_test_s3_keys.append(s3_key)
     context.backfill_s3_key = s3_key
     context.backfill_source_bucket = inbox_bucket
-    context.test_thumbnail_key = _thumbnail_key(s3_key)
+    context.backfill_content_hash = content_hash
+    context.test_thumbnail_key = f"thumbnails/{content_hash}.webp"
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
 
 
@@ -102,7 +105,7 @@ def step_run_inbox_backfill(context):
 
     lam = boto3.client("lambda")
     context.backfill_result = run_inbox_backfill(
-        s3_keys=[context.backfill_s3_key],
+        rows=[(context.backfill_s3_key, context.backfill_content_hash)],
         inbox_bucket=context.backfill_source_bucket,
         lambda_client=lam,
         lambda_name=os.environ["THUMBNAILER_LAMBDA_NAME"],

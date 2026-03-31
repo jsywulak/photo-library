@@ -43,6 +43,8 @@ def lambda_handler(event, context):
     logger.info("Thumbnailing s3://%s/%s", source_bucket, s3_key)
 
     s3 = boto3.client("s3")
-    status = generate_thumbnail(s3_key, source_bucket, _THUMBNAIL_BUCKET, s3)
+    content_hash = event.get("content_hash")
+    status = generate_thumbnail(s3_key, source_bucket, _THUMBNAIL_BUCKET, s3, content_hash=content_hash)
 
-    return {"status": status, "s3_key": s3_key, "thumbnail_key": thumbnail_key(s3_key)}
+    actual_thumb_key = f"thumbnails/{content_hash}.webp" if content_hash else thumbnail_key(s3_key)
+    return {"status": status, "s3_key": s3_key, "thumbnail_key": actual_thumb_key}

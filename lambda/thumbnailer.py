@@ -20,9 +20,9 @@ THUMBNAIL_SIZE = (400, 400)
 THUMBNAIL_QUALITY = 85
 
 
-def generate_thumbnail(s3_key: str, source_bucket: str, thumbnail_bucket: str, s3_client) -> str:
+def generate_thumbnail(s3_key: str, source_bucket: str, thumbnail_bucket: str, s3_client, content_hash: str | None = None) -> str:
     """Generate a thumbnail for a photo. Returns 'thumbnailed' or 'skipped'."""
-    thumb_key = thumbnail_key(s3_key)
+    thumb_key = f"thumbnails/{content_hash}.webp" if content_hash else thumbnail_key(s3_key)
 
     # Skip if thumbnail already exists.
     try:

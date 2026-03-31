@@ -8,8 +8,6 @@ S3 bucket. Photos live in the `photos` table with bucket = INBOX_BUCKET.
 import base64
 import json
 
-from utils import thumbnail_key as _thumbnail_key
-
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _INBOX_PAGE_SIZE = 50
 
@@ -45,10 +43,6 @@ def _decode_cursor(cursor) -> tuple:
         raise ValueError(f"Invalid cursor: {cursor!r}")
 
 
-def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
-    return f"https://{thumbnail_bucket}.s3.amazonaws.com/{_thumbnail_key(s3_key)}"
-
-
 def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
                limit: int = _INBOX_PAGE_SIZE, cursor=None) -> dict:
     cursor_c, cursor_id = _decode_cursor(cursor)
@@ -61,7 +55,7 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
         total = cur.fetchone()[0]
         cur.execute(
             """
-            SELECT id, s3_key, captured_at FROM photos
+            SELECT id, s3_key, captured_at, content_hash FROM photos
             WHERE bucket = %s AND archived_at IS NULL AND (
                 %s IS NULL AND %s IS NULL  -- no cursor: first page
                 OR (captured_at IS NOT NULL AND %s IS NULL)  -- dated before undated tail
@@ -88,7 +82,7 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
     next_cursor = _encode_cursor(last[2], last[0]) if last else None
 
     items = []
-    for row_id, key, _captured_at in rows:
+    for row_id, key, _captured_at, content_hash in rows:
         url = s3_client.generate_presigned_url(
             "get_object",
             Params={"Bucket": inbox_bucket, "Key": key},
@@ -97,7 +91,7 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
         items.append({
             "s3_key": key,
             "url": url,
-            "thumbnail_url": _thumbnail_url(key, thumbnail_bucket),
+            "thumbnail_url": f"https://{thumbnail_bucket}.s3.amazonaws.com/thumbnails/{content_hash}.webp",
         })
     return {"items": items, "next_cursor": next_cursor, "total": total}
 
