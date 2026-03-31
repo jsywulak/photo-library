@@ -287,7 +287,10 @@ def step_no_chips(context):
 
 @then("I see {n:d} photos in the grid")
 def step_see_n_photos(context, n):
-    context.page.locator(".grid-item").first.wait_for()
+    context.page.wait_for_function(
+        f"document.querySelectorAll('.grid-item').length >= {n}",
+        timeout=2000,
+    )
     count = context.page.locator(".grid-item").count()
     assert count == n, f"Expected {n} photos, got {count}"
 
