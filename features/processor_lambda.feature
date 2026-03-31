@@ -13,3 +13,8 @@ Feature: Processor Lambda
     When the Lambda processes the photo
     Then the photo should be stored in the Neon database
     And the photo should have tags in the Neon database
+
+  Scenario: Processing a missing S3 key does not crash the Lambda
+    Given the processor Lambda is deployed
+    When the Lambda is invoked with a key that does not exist in S3
+    Then the Lambda should return without a function error

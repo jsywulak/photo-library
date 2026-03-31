@@ -147,8 +147,8 @@ def _extract_captured_at(image_bytes: bytes) -> datetime | None:
         raw = exif.get_ifd(_EXIF_SUB_IFD).get(_EXIF_DATETIME_ORIGINAL) or exif.get(_EXIF_DATETIME_ORIGINAL)
         if raw:
             return datetime.strptime(raw, _EXIF_DATETIME_FORMAT)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Could not extract EXIF captured_at: %s", e)
     return None
 
 

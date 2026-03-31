@@ -31,11 +31,12 @@ _DB_URL = get_required_env("NEON_DATABASE_URL")
 _API_KEY = get_required_env("API_KEY")
 _S3_BUCKET = get_required_env("S3_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
+_FRONTEND_ORIGIN = f"https://{get_required_env('FRONTEND_DOMAIN')}"
 
 _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 _CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": _FRONTEND_ORIGIN,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "x-api-key, content-type",
 }
@@ -126,9 +127,15 @@ def lambda_handler(event, context):
         body = {"error": "No tags provided"}
         return _http_response(400, body) if is_function_url else body
 
-    logger.info("Searching for tags: %s", tags)
+    if is_function_url:
+        raw_limit = (payload or {}).get("limit", 200)
+    else:
+        raw_limit = event.get("limit", 200)
+    limit = max(1, min(int(raw_limit), 200))
+
+    logger.info("Searching for tags: %s (limit=%d)", tags, limit)
 
     with _db() as conn:
-        results = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET)
+        results = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET, limit=limit)
         logger.info("Found %d results", len(results))
         return _http_response(200, results) if is_function_url else results

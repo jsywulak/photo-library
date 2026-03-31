@@ -18,3 +18,7 @@ Feature: Thumbnail key uniqueness
     Given the s3_key is "2024/IMG_001.jpg"
     And another s3_key is "2023/IMG_001.jpg"
     Then their thumbnail keys should be different
+
+  Scenario: Steps helper and Lambda utility agree on thumbnail key for path-based keys
+    Given the s3_key is "2024/IMG_001.jpg"
+    Then the steps helper thumbnail key should match the Lambda utility thumbnail key

@@ -12,6 +12,7 @@ import logging
 import anthropic
 import boto3
 import psycopg2
+from botocore.exceptions import ClientError
 
 from processor import process_one, record_error
 from utils import get_required_env
@@ -41,11 +42,18 @@ def lambda_handler(event, context):
 
     logger.info("Processing s3://%s/%s", bucket, key)
 
-    image_bytes = (
-        boto3.client("s3")
-        .get_object(Bucket=bucket, Key=key)["Body"]
-        .read()
-    )
+    try:
+        image_bytes = (
+            boto3.client("s3")
+            .get_object(Bucket=bucket, Key=key)["Body"]
+            .read()
+        )
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code in ("NoSuchKey", "AccessDenied"):
+            logger.warning("Skipping s3://%s/%s — S3 error: %s", bucket, key, error_code)
+            return {"status": "skipped", "reason": error_code, "s3_key": key}
+        raise
 
     conn = psycopg2.connect(_DB_URL, connect_timeout=10)
     conn.autocommit = False

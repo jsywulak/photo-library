@@ -30,6 +30,10 @@ Parameters:
     Default: photo-tagging-thumbnails
     Description: Public S3 bucket containing thumbnails
 
+  FrontendDomain:
+    Type: String
+    Description: Domain of the frontend, used to restrict CORS
+
   InboxBucket:
     Type: String
     Description: S3 bucket containing unprocessed photos
@@ -84,6 +88,7 @@ Resources:
           PHOTOS_BUCKET: !Ref PhotosBucket
           THUMBNAIL_BUCKET: !Ref ThumbnailBucket
           INBOX_BUCKET: !Ref InboxBucket
+          FRONTEND_DOMAIN: !Ref FrontendDomain
 
   InboxFunctionUrl:
     Type: AWS::Lambda::Url

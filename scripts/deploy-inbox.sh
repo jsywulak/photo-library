@@ -13,6 +13,7 @@ aws cloudformation deploy \
     PhotosBucket="${S3_BUCKET}" \
     ThumbnailBucket="${THUMBNAIL_BUCKET}" \
     InboxBucket="${INBOX_BUCKET}" \
+    FrontendDomain="${FRONTEND_DOMAIN}" \
   --capabilities CAPABILITY_IAM
 
 # Push the new code to Lambda (CloudFormation doesn't detect S3 object changes)

@@ -8,7 +8,7 @@ import psycopg2
 
 def thumbnail_key(s3_key: str) -> str:
     """Derive the thumbnail S3 key from a source s3_key."""
-    return f"thumbnails/{Path(s3_key).stem}.webp"
+    return f"thumbnails/{Path(s3_key).with_suffix('.webp')}"
 
 
 def neon_conn():

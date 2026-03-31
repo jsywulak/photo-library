@@ -70,6 +70,33 @@ def step_upload_test_photo(context):
     context.test_content_hash = content_hash  
 
 
+@when("the Lambda is invoked with a key that does not exist in S3")
+def step_invoke_lambda_missing_key(context):
+    client = boto3.client("lambda")
+    payload = {
+        "Records": [{
+            "s3": {
+                "bucket": {"name": os.environ["S3_BUCKET"]},
+                "object": {"key": f"test-{uuid.uuid4().hex[:8]}-nonexistent.jpg"},
+            }
+        }]
+    }
+    response = client.invoke(
+        FunctionName=context.lambda_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps(payload),
+    )
+    context.lambda_response = response
+    context.lambda_result = json.loads(response["Payload"].read())
+
+
+@then("the Lambda should return without a function error")
+def step_lambda_no_function_error(context):
+    assert "FunctionError" not in context.lambda_response, (
+        f"Lambda crashed with: {context.lambda_result}"
+    )
+
+
 @when("the Lambda processes the photo")
 def step_invoke_lambda(context):
     client = boto3.client("lambda")

@@ -439,12 +439,12 @@
       btn.setAttribute('aria-label', `Remove tag ${tag}`);
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        await fetch(`${BASE_URL}/remove-tag`, {
+        const res = await fetch(`${BASE_URL}/remove-tag`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
           body: JSON.stringify({ s3_key: s3Key, tag }),
         });
-        span.remove();
+        if (res.ok) span.remove();
       });
 
       span.appendChild(btn);
@@ -469,11 +469,12 @@
             const newChip = createTagChip(tag, s3Key);
             input.replaceWith(chip);
             lightboxTags.insertBefore(newChip, chip);
-            fetch(`${BASE_URL}/add-tags`, {
+            const res = await fetch(`${BASE_URL}/add-tags`, {
               method: 'POST',
               headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
               body: JSON.stringify({ s3_key: s3Key, tags: [tag] }),
             });
+            if (!res.ok) newChip.remove();
           } else if (e.key === 'Escape') {
             input.replaceWith(chip);
           }

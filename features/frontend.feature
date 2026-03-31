@@ -101,6 +101,25 @@ Feature: Frontend UI
     And I click remove on the "floral" lightbox tag
     Then the "floral" tag is no longer shown in the lightbox
 
+  Scenario: Remove tag failure keeps the tag in the lightbox
+    Given the search API returns 1 result
+    And the remove-tag API returns an error
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    And I click remove on the "floral" lightbox tag
+    Then the "floral" tag is still shown in the lightbox
+
+  Scenario: Add tag failure removes the chip from the lightbox
+    Given the search API returns 1 result
+    And the add-tags API returns an error
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    And I click the "Add tag..." chip in the lightbox
+    And I type "roses" in the lightbox tag input and press Enter
+    Then "roses" is not shown as a tag in the lightbox
+
   Scenario: Closing the lightbox with the × button
     Given the search API returns 1 result
     When I open the frontend

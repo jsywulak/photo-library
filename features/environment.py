@@ -33,6 +33,8 @@ def before_scenario(context, scenario):
         context.mock_inbox_results = []
         context.mock_process_error = False
         context.mock_archive_error = False
+        context.mock_remove_tag_error = False
+        context.mock_add_tags_error = False
         context.page = None
         return
     if "infrastructure" not in scenario.feature.tags:

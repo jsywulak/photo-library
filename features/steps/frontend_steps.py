@@ -72,9 +72,19 @@ def step_remove_tag_api_accepts(context):
     pass  # handled unconditionally in the lambda route mock
 
 
+@given("the remove-tag API returns an error")
+def step_remove_tag_api_error(context):
+    context.mock_remove_tag_error = True
+
+
 @given("the add-tags API accepts requests")
 def step_add_tags_api_accepts(context):
     pass  # handled unconditionally in the lambda route mock
+
+
+@given("the add-tags API returns an error")
+def step_add_tags_api_error(context):
+    context.mock_add_tags_error = True
 
 
 @given("the search API returns {n:d} result")
@@ -182,17 +192,19 @@ def step_open_frontend(context):
                 body=json.dumps(context.mock_tags),
             )
         elif "/remove-tag" in request.url:
-            route.fulfill(
-                status=200,
-                content_type="application/json",
-                body=json.dumps({"removed": True}),
-            )
+            if getattr(context, "mock_remove_tag_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"removed": True}))
         elif "/add-tags" in request.url:
-            route.fulfill(
-                status=200,
-                content_type="application/json",
-                body=json.dumps({"added": 1}),
-            )
+            if getattr(context, "mock_add_tags_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"added": 1}))
         else:
             route.fulfill(
                 status=200,
@@ -355,6 +367,18 @@ def step_click_remove_lightbox_tag(context, tag):
 def step_tag_not_in_lightbox(context, tag):
     locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
     assert locator.count() == 0, f"Expected tag {tag!r} to be gone from lightbox"
+
+
+@then('the "{tag}" tag is still shown in the lightbox')
+def step_tag_still_in_lightbox(context, tag):
+    locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
+    assert locator.count() > 0, f"Expected tag {tag!r} to still be in lightbox"
+
+
+@then('"{tag}" is not shown as a tag in the lightbox')
+def step_tag_absent_in_lightbox(context, tag):
+    locator = context.page.locator(f"#lightbox-tags .lightbox-tag:text('{tag}')")
+    assert locator.count() == 0, f"Expected tag {tag!r} to not be in lightbox"
 
 
 @then('the lightbox shows an "Add tag..." chip')

@@ -90,7 +90,10 @@ def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
     return updated > 0
 
 
-def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None) -> list[dict]:
+_DEFAULT_SEARCH_LIMIT = 200
+
+
+def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None, limit: int = _DEFAULT_SEARCH_LIMIT) -> list[dict]:
     normalised = _normalise_tags(tags)
     with db_conn.cursor() as cur:
         cur.execute(
@@ -104,8 +107,9 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbna
             GROUP BY p.id, p.s3_key
             HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
             ORDER BY match_count DESC
+            LIMIT %s
             """,
-            (normalised, normalised),
+            (normalised, normalised, limit),
         )
         rows = cur.fetchall()
 

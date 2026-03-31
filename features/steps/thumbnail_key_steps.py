@@ -8,6 +8,7 @@ from behave import given, then
 sys.path.insert(0, str(Path(__file__).parents[2] / "lambda"))
 
 from utils import thumbnail_key
+from common import thumbnail_key as common_thumbnail_key
 
 
 @given('the s3_key is "{s3_key}"')
@@ -32,4 +33,13 @@ def step_check_keys_differ(context):
     key_b = thumbnail_key(context.other_s3_key)
     assert key_a != key_b, (
         f"Expected different thumbnail keys but both produced {key_a!r}"
+    )
+
+
+@then("the steps helper thumbnail key should match the Lambda utility thumbnail key")
+def step_helpers_agree(context):
+    from_common = common_thumbnail_key(context.s3_key)
+    from_utils = thumbnail_key(context.s3_key)
+    assert from_common == from_utils, (
+        f"common.py={from_common!r}, utils.py={from_utils!r}"
     )

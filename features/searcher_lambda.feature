@@ -99,3 +99,14 @@ Feature: Searcher Lambda
     When the Function URL POST /remove-tag is called with an incorrect API key
     Then the HTTP response status should be 401
 
+  Scenario: API responses restrict CORS to the frontend domain
+    Given the searcher Lambda is deployed
+    When the Function URL GET /tags is called with the correct API key
+    Then the Access-Control-Allow-Origin header should not be a wildcard
+
+  Scenario: Search results are capped at the requested limit
+    Given the searcher Lambda is deployed
+    And 5 photos exist in the Neon database tagged with "limit-test"
+    When the Lambda is invoked with tags "limit-test" and a limit of 3
+    Then the results should contain exactly 3 photos
+

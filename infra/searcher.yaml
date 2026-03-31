@@ -30,6 +30,10 @@ Parameters:
     Default: photo-tagging-thumbnails
     Description: Public S3 bucket containing thumbnails
 
+  FrontendDomain:
+    Type: String
+    Description: Domain of the frontend, used to restrict CORS
+
 Resources:
   SearcherRole:
     Type: AWS::IAM::Role
@@ -71,6 +75,7 @@ Resources:
           API_KEY: !Ref ApiKey
           S3_BUCKET: !Ref PhotosBucket
           THUMBNAIL_BUCKET: !Ref ThumbnailBucket
+          FRONTEND_DOMAIN: !Ref FrontendDomain
 
   SearcherFunctionUrl:
     Type: AWS::Lambda::Url

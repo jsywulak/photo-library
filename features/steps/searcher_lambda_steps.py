@@ -26,9 +26,9 @@ def _api_get(path, api_key=None):
     req = urllib.request.Request(url, headers={"x-api-key": key}, method="GET")
     try:
         with urllib.request.urlopen(req) as resp:
-            return resp.status, json.loads(resp.read())
+            return resp.status, json.loads(resp.read()), dict(resp.headers)
     except urllib.error.HTTPError as e:
-        return e.code, None
+        return e.code, None, dict(e.headers)
 
 
 def _api_post(path, body_dict, api_key=None):
@@ -77,6 +77,20 @@ def step_seed_photo(context, tags):
     context.last_photo_key = s3_key
 
 
+@given('{n:d} photos exist in the Neon database tagged with "{tags}"')
+def step_seed_n_photos(context, n, tags):
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    tag_list = [t.strip() for t in tags.split(",")]
+    conn = neon_conn()
+    for _ in range(n):
+        s3_key = f"test-{uuid.uuid4().hex[:8]}-photo.jpg"
+        seed_photo(conn, s3_key, tag_list)
+        context.neon_test_s3_keys.append(s3_key)
+    conn.commit()
+    conn.close()
+
+
 @when('the Lambda is invoked with tags "{tags}"')
 def step_invoke_searcher(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]
@@ -91,6 +105,37 @@ def step_invoke_searcher(context, tags):
         f"Lambda error: {json.loads(response['Payload'].read())}"
     )
     context.search_results = json.loads(response["Payload"].read())
+
+
+@when('the Lambda is invoked with tags "{tags}" and a limit of {limit:d}')
+def step_invoke_searcher_with_limit(context, tags, limit):
+    tag_list = [t.strip() for t in tags.split(",")]
+    client = boto3.client("lambda")
+    response = client.invoke(
+        FunctionName=context.searcher_lambda_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"tags": tag_list, "limit": limit}),
+    )
+    assert response["StatusCode"] == 200, f"Lambda returned status {response['StatusCode']}"
+    assert "FunctionError" not in response, (
+        f"Lambda error: {json.loads(response['Payload'].read())}"
+    )
+    context.search_results = json.loads(response["Payload"].read())
+
+
+@then("the results should contain exactly {n:d} photos")
+def step_results_exactly_n(context, n):
+    count = len(context.search_results)
+    assert count == n, f"Expected exactly {n} results, got {count}"
+
+
+@then("the Access-Control-Allow-Origin header should not be a wildcard")
+def step_cors_not_wildcard(context):
+    origin = context.response_headers.get("access-control-allow-origin")
+    assert origin, "Expected Access-Control-Allow-Origin header to be present"
+    assert origin != "*", (
+        f"Expected CORS origin to be restricted to the frontend domain, got wildcard '*'"
+    )
 
 
 @then("the searcher function should be active")
@@ -119,12 +164,12 @@ def step_ranking(context):
 
 @when("the Function URL GET /tags is called with the correct API key")
 def step_get_tags_correct_key(context):
-    context.http_status, context.http_body = _api_get("/tags")
+    context.http_status, context.http_body, context.response_headers = _api_get("/tags")
 
 
 @when("the Function URL GET /tags is called with an incorrect API key")
 def step_get_tags_wrong_key(context):
-    context.http_status, _ = _api_get("/tags", api_key="wrong-key")
+    context.http_status, _, _ = _api_get("/tags", api_key="wrong-key")
 
 
 @then("the response body should be a list of strings")
