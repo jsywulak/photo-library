@@ -35,6 +35,8 @@ _FRONTEND_ORIGIN = f"https://{get_required_env('FRONTEND_DOMAIN')}"
 
 _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
+_DEFAULT_DIRECT_LIMIT = 10_000  # no public API cap for direct Lambda invocations
+
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": _FRONTEND_ORIGIN,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -129,9 +131,9 @@ def lambda_handler(event, context):
 
     if is_function_url:
         raw_limit = (payload or {}).get("limit", 200)
+        limit = max(1, min(int(raw_limit), 200))
     else:
-        raw_limit = event.get("limit", 200)
-    limit = max(1, min(int(raw_limit), 200))
+        limit = int(event.get("limit", _DEFAULT_DIRECT_LIMIT))
 
     logger.info("Searching for tags: %s (limit=%d)", tags, limit)
 
