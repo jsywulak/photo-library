@@ -482,3 +482,32 @@ aws s3api list-objects-v2 --bucket BUCKET_NAME --query 'Contents[].Key' --output
 
 `--query Contents[].Key` extracts only the key field (handles spaces), `--output text` gives tab-separated values, `tr '\t' '\n'` splits to one key per line.
 
+
+---
+
+## Session — 2026-03-30/31
+
+### Lambda cleanup — removing the old processor
+
+After splitting the processor into two dedicated Lambdas (processor v2 + inbox) in a prior session, cleaned up all the leftover artifacts from the original monolithic processor:
+
+- Deleted `infra/processor.yaml`, `scripts/deploy-processor.sh`, `scripts/package-processor.sh`, `requirements-processor-lambda.txt`
+- Removed `package-processor` / `deploy-processor` Makefile targets; updated help text
+- Deleted `features/processor_lambda.feature` and `features/steps/processor_lambda_steps.py`
+- Updated `features/steps/infrastructure_steps.py` concurrency check to use `PROCESSOR_V2_LAMBDA_NAME` instead of `PROCESSOR_LAMBDA_NAME`
+- Updated `infra/processor-v2.yaml` to set `ReservedConcurrentExecutions: 3` (original live value; limits kept low because higher concurrency overwhelms the Claude API)
+- Deleted the live `photo-tagging` CloudFormation stack from AWS
+
+**Bug found during cleanup:** Processor v2 Lambda was still running stale code — the "handle missing S3 keys gracefully" fix from commit `2547440` was applied after the v2 Lambda was last deployed. A new BDD test scenario ("Processing a missing S3 key does not crash the v2 Lambda") caught this. Redeployed v2 to fix.
+
+### CORS fix — restrict Allow-Origin to frontend domain
+
+The CORS `Access-Control-Allow-Origin` header was previously hardcoded to `*`. Changed it to use the `FRONTEND_DOMAIN` env var in both `searcher_handler.py` and `inbox_handler.py`.
+
+**Bugs hit along the way:**
+- `FRONTEND_DOMAIN` was set to `lax.jsywulak.com` (no scheme), but the handler was prepending `https://` — the actual frontend is served over `http://`. Fixed by storing the full origin in `.env`: `FRONTEND_DOMAIN=http://lax.jsywulak.com`.
+- `features/steps/infrastructure_steps.py` was reading `FRONTEND_DOMAIN` as the S3 bucket name instead of `FRONTEND_BUCKET` — broke as soon as `FRONTEND_DOMAIN` included a scheme. Fixed to use `FRONTEND_BUCKET`.
+- Removed stale `PROCESSOR_LAMBDA_NAME` from `.env` (old stack is gone).
+
+### Usage
+Hit my limit several times. Couldn't get much done during the day because of new Claude limits, and then I had so much leftover to do at night that I hit it again. Blah. :(
