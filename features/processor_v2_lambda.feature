@@ -12,6 +12,11 @@ Feature: Processor v2 Lambda
     Given the processor v2 Lambda is deployed
     Then an EventBridge rule should trigger the processor v2 Lambda on S3 uploads to the photos bucket
 
+  Scenario: Processing a missing S3 key does not crash the v2 Lambda
+    Given the processor v2 Lambda is deployed
+    When the v2 Lambda is invoked with a key that does not exist in S3
+    Then the v2 Lambda should return without a function error
+
   Scenario: Processing a photo stores results in the database v2
     Given the processor v2 Lambda is deployed
     And a test photo is uploaded to S3 v2

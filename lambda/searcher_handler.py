@@ -31,7 +31,7 @@ _DB_URL = get_required_env("NEON_DATABASE_URL")
 _API_KEY = get_required_env("API_KEY")
 _S3_BUCKET = get_required_env("S3_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
-_FRONTEND_ORIGIN = f"https://{get_required_env('FRONTEND_DOMAIN')}"
+_FRONTEND_ORIGIN = get_required_env("FRONTEND_DOMAIN")
 
 _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 
@@ -42,7 +42,6 @@ _CORS_HEADERS = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "x-api-key, content-type",
 }
-
 
 @contextmanager
 def _db():

@@ -36,7 +36,7 @@ _API_KEY = get_required_env("API_KEY")
 _INBOX_BUCKET = get_required_env("INBOX_BUCKET")
 _PHOTOS_BUCKET = get_required_env("PHOTOS_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
-_FRONTEND_ORIGIN = f"https://{get_required_env('FRONTEND_DOMAIN')}"
+_FRONTEND_ORIGIN = get_required_env("FRONTEND_DOMAIN")
 
 _s3_client = boto3.client("s3", config=Config(signature_version="s3v4"))
 

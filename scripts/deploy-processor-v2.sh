@@ -26,4 +26,4 @@ aws lambda update-function-code \
   --s3-bucket "${DEPLOYMENT_BUCKET}" \
   --s3-key processor-v2.zip \
   --output text \
-  --query 'LastModified'
+  --query 'LastModified' | cat

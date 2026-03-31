@@ -45,6 +45,33 @@ def step_processor_v2_eventbridge_rule(context):
     assert_eventbridge_rule_targets_lambda(context.v2_lambda_name, os.environ["S3_BUCKET"])
 
 
+@when("the v2 Lambda is invoked with a key that does not exist in S3")
+def step_invoke_v2_lambda_missing_key(context):
+    client = boto3.client("lambda")
+    payload = {
+        "Records": [{
+            "s3": {
+                "bucket": {"name": os.environ["S3_BUCKET"]},
+                "object": {"key": f"test-{uuid.uuid4().hex[:8]}-nonexistent.jpg"},
+            }
+        }]
+    }
+    response = client.invoke(
+        FunctionName=context.v2_lambda_name,
+        InvocationType="RequestResponse",
+        Payload=json.dumps(payload),
+    )
+    context.v2_lambda_response = response
+    context.v2_lambda_result = json.loads(response["Payload"].read())
+
+
+@then("the v2 Lambda should return without a function error")
+def step_v2_lambda_no_function_error(context):
+    assert "FunctionError" not in context.v2_lambda_response, (
+        f"Lambda crashed with: {context.v2_lambda_result}"
+    )
+
+
 @given("a test photo is uploaded to S3 v2")
 def step_upload_test_photo_v2(context):
     import hashlib

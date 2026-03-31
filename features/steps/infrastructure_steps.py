@@ -62,8 +62,8 @@ def step_photos_bucket_configured(context):
 
 @given("the processor Lambda is configured")
 def step_processor_lambda_configured(context):
-    name = os.environ.get("PROCESSOR_LAMBDA_NAME")
-    assert name, "PROCESSOR_LAMBDA_NAME is not set in the environment"
+    name = os.environ.get("PROCESSOR_V2_LAMBDA_NAME")
+    assert name, "PROCESSOR_V2_LAMBDA_NAME is not set in the environment"
     context.processor_lambda_name = name
 
 
@@ -86,8 +86,8 @@ def step_reserved_concurrency(context, limit):
 
 @given("a frontend bucket name is configured")
 def step_frontend_bucket_configured(context):
-    bucket = os.environ.get("FRONTEND_DOMAIN")
-    assert bucket, "FRONTEND_DOMAIN is not set in the environment"
+    bucket = os.environ.get("FRONTEND_BUCKET")
+    assert bucket, "FRONTEND_BUCKET is not set in the environment"
     context.frontend_bucket = bucket
 
 

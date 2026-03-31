@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor deploy-processor package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -24,8 +24,7 @@ help:
 	@echo ""
 	@echo "AWS deployment:"
 	@echo "  make neon-migrate     Apply pending migrations to Neon"
-	@echo "  make deploy-processor     Build and deploy the processor Lambda"
-	@echo "  make deploy-processor-v2  Build and deploy the processor v2 Lambda"
+	@echo "  make deploy-processor-v2  Build and deploy the processor Lambda"
 	@echo "  make deploy-searcher      Build and deploy the searcher Lambda"
 	@echo "  make deploy-inbox         Build and deploy the inbox Lambda"
 	@echo "  make deploy-thumbnailer   Build and deploy the thumbnailer Lambda"
@@ -101,12 +100,6 @@ search:
 
 db-drop:
 	@bash scripts/db-drop.sh
-
-package-processor:
-	@bash scripts/package-processor.sh
-
-deploy-processor: package-processor
-	@bash scripts/deploy-processor.sh
 
 package-processor-v2:
 	@bash scripts/package-processor-v2.sh

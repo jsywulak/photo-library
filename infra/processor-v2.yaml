@@ -67,7 +67,7 @@ Resources:
       Role: !GetAtt ProcessorV2Role.Arn
       Timeout: 120
       MemorySize: 512
-      ReservedConcurrentExecutions: 10
+      ReservedConcurrentExecutions: 3
       Code:
         S3Bucket: !Ref DeploymentBucket
         S3Key: !Ref DeploymentKey
