@@ -63,6 +63,11 @@
       line-height: 1;
     }
 
+    .stat-value.error {
+      font-size: 1rem;
+      color: #c0392b;
+    }
+
     /* Info icon + CSS tooltip */
     .info-icon {
       color: #444;
@@ -124,24 +129,6 @@
     #top-tags-list .tag-count {
       color: #555;
     }
-
-    .status {
-      padding: 3rem 2rem;
-      text-align: center;
-      color: #333;
-      font-size: 0.875rem;
-    }
-
-    #stats-error {
-      display: none;
-      padding: 1rem 1.5rem;
-      margin: 2rem;
-      background: #1a1a1a;
-      border: 1px solid #3a1a1a;
-      border-radius: 4px;
-      color: #c0392b;
-      font-size: 0.875rem;
-    }
   </style>
 </head>
 <body>
@@ -149,7 +136,7 @@
     <h1>Stats</h1>
   </header>
 
-  <div id="stats-container" style="display:none">
+  <div id="stats-container">
     <div class="stat-card">
       <span class="stat-label">
         Inbox
@@ -229,52 +216,84 @@
     </div>
   </div>
 
-  <div id="stats-loading" class="status">Loading…</div>
-  <div id="stats-error">Failed to load stats.</div>
-
   <script src="config.js"></script>
   <script>
     const BASE_URL = (typeof STATS_URL !== 'undefined' ? STATS_URL : '').replace(/\/$/, '');
+    const HEADERS = { 'x-api-key': API_KEY };
 
-    async function loadStats() {
-      try {
-        const res = await fetch(BASE_URL + '/stats', {
-          headers: { 'x-api-key': API_KEY },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        document.getElementById('inbox-count').textContent = data.inbox_count;
-        document.getElementById('db-count').textContent = data.db_count;
-        document.getElementById('archived-count').textContent = data.archived_count;
-        document.getElementById('total-photos-count').textContent = data.total_photos;
-        document.getElementById('inbox-s3-count').textContent = data.inbox_s3_count;
-        document.getElementById('processed-s3-count').textContent = data.processed_s3_count;
-        document.getElementById('thumbnail-count').textContent = data.thumbnail_count;
-        document.getElementById('orphaned-thumbnails-count').textContent = data.orphaned_thumbnails;
-        document.getElementById('orphaned-processed-count').textContent = data.orphaned_processed;
-        document.getElementById('orphaned-inbox-count').textContent = data.orphaned_inbox;
-
-        const list = document.getElementById('top-tags-list');
-        if (data.top_tags.length === 0) {
-          list.innerHTML = '<li style="color:#555">No tags yet.</li>';
-        } else {
-          data.top_tags.forEach(tag => {
-            const li = document.createElement('li');
-            li.innerHTML = `<span>${tag.name}</span><span class="tag-count">${tag.count}</span>`;
-            list.appendChild(li);
-          });
-        }
-
-        document.getElementById('stats-loading').style.display = 'none';
-        document.getElementById('stats-container').style.display = 'grid';
-      } catch (err) {
-        document.getElementById('stats-loading').style.display = 'none';
-        document.getElementById('stats-error').style.display = 'block';
-      }
+    function set(id, text) {
+      document.getElementById(id).textContent = text;
     }
 
-    loadStats();
+    function setError(id) {
+      const el = document.getElementById(id);
+      el.textContent = 'err';
+      el.classList.add('error');
+    }
+
+    function fetchStat(path) {
+      return fetch(BASE_URL + path, { headers: HEADERS })
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+        .then(data => data.value);
+    }
+
+    // Track the three DB counts needed to compute total photos
+    const totals = {};
+    function maybeUpdateTotal() {
+      if ('inbox' in totals && 'db' in totals && 'archived' in totals)
+        set('total-photos-count', totals.inbox + totals.db + totals.archived);
+    }
+
+    fetchStat('/stats/inbox-count')
+      .then(v => { set('inbox-count', v); totals.inbox = v; maybeUpdateTotal(); })
+      .catch(() => { setError('inbox-count'); totals.inbox = 0; maybeUpdateTotal(); });
+
+    fetchStat('/stats/db-count')
+      .then(v => { set('db-count', v); totals.db = v; maybeUpdateTotal(); })
+      .catch(() => { setError('db-count'); totals.db = 0; maybeUpdateTotal(); });
+
+    fetchStat('/stats/archived-count')
+      .then(v => { set('archived-count', v); totals.archived = v; maybeUpdateTotal(); })
+      .catch(() => { setError('archived-count'); totals.archived = 0; maybeUpdateTotal(); });
+
+    fetchStat('/stats/inbox-s3-count')
+      .then(v => set('inbox-s3-count', v))
+      .catch(() => setError('inbox-s3-count'));
+
+    fetchStat('/stats/processed-s3-count')
+      .then(v => set('processed-s3-count', v))
+      .catch(() => setError('processed-s3-count'));
+
+    fetchStat('/stats/thumbnail-count')
+      .then(v => set('thumbnail-count', v))
+      .catch(() => setError('thumbnail-count'));
+
+    fetchStat('/stats/orphaned-thumbnails')
+      .then(v => set('orphaned-thumbnails-count', v))
+      .catch(() => setError('orphaned-thumbnails-count'));
+
+    fetchStat('/stats/orphaned-processed')
+      .then(v => set('orphaned-processed-count', v))
+      .catch(() => setError('orphaned-processed-count'));
+
+    fetchStat('/stats/orphaned-inbox')
+      .then(v => set('orphaned-inbox-count', v))
+      .catch(() => setError('orphaned-inbox-count'));
+
+    fetchStat('/stats/top-tags').then(tags => {
+      const list = document.getElementById('top-tags-list');
+      if (!tags || tags.length === 0) {
+        list.innerHTML = '<li style="color:#555">No tags yet.</li>';
+      } else {
+        tags.forEach(tag => {
+          const li = document.createElement('li');
+          li.innerHTML = `<span>${tag.name}</span><span class="tag-count">${tag.count}</span>`;
+          list.appendChild(li);
+        });
+      }
+    }).catch(() => {
+      document.getElementById('top-tags-list').innerHTML = '<li style="color:#c0392b">err</li>';
+    });
   </script>
 </body>
 </html>

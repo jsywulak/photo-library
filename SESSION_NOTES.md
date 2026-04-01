@@ -511,3 +511,104 @@ The CORS `Access-Control-Allow-Origin` header was previously hardcoded to `*`. C
 
 ### Usage
 Hit my limit several times. Couldn't get much done during the day because of new Claude limits, and then I had so much leftover to do at night that I hit it again. Blah. :(
+
+---
+
+## Session — 2026-03-31
+
+### Stats dashboard (new feature — Phase 1: Lambda)
+
+Built a dedicated stats Lambda and deployed it before touching the frontend.
+
+**Lambda (`lambda/stats.py` + `lambda/stats_handler.py`):**
+- `GET /stats` endpoint, auth via `x-api-key` header, CORS via `FRONTEND_DOMAIN`
+- Initial metrics: `inbox_count` (DB), `photos_count` (S3), `db_count` (DB), `archived_count` (DB), `top_tags`
+- CloudFormation stack `photo-tagging-stats` with IAM `s3:ListBucket` and `THUMBNAIL_BUCKET` env var
+- `make package-stats` / `make deploy-stats` targets added
+- BDD tests: `features/stats_lambda.feature` (`@infrastructure`) — auth rejection + all fields present
+
+**Correctness fix — inbox count:**
+- Stats page showed 4,207 inbox objects (raw S3 count); inbox page title showed 1,959 (DB count). Discrepancy: ~2,248 S3 objects with no DB record.
+- Fixed `inbox_count` to use the same DB query as the inbox page: `SELECT COUNT(*) FROM photos WHERE bucket = inbox AND archived_at IS NULL`.
+
+### Stats dashboard — Phase 2: Frontend
+
+- `frontend/stats.html` — standalone dark-themed page, card grid layout, CSS-only `ⓘ` tooltip on every card label using `data-tooltip` + `::after` pseudo-element
+- `frontend/config.js` + `config.example.js` updated with `STATS_URL`
+- `scripts/deploy-frontend.sh` updated to upload `stats.html` as `/stats`
+- Playwright BDD tests: `features/stats_frontend.feature` — all metrics render, top tags render, error state, info icon present
+
+### Stats — additional metrics
+
+Expanded the Lambda to cover data-integrity health checks:
+
+- `total_photos` — inbox + processed + archived DB counts
+- `inbox_s3_count` / `processed_s3_count` — raw S3 object counts
+- `thumbnail_count` — S3 objects under `thumbnails/` prefix
+- `orphaned_thumbnails` — thumbnails with no matching `content_hash` in DB
+- `orphaned_processed` — objects in photos bucket with no matching hash in DB
+- `orphaned_inbox` — objects in inbox bucket with no matching `s3_key` in DB
+
+Orphan detection approach: load all known keys/hashes from DB into a Python set in one query, paginate S3, check each key against the set. Same direction as `scripts/sync_check.py`.
+
+Lambda timeout bumped to 60s (orphan scans across 3 buckets take ~35s at current scale). IAM `s3:ListBucket` extended to inbox and thumbnail buckets.
+
+### Bug fixes
+
+- `scripts/reprocess_errors.py` was referencing `PROCESSOR_LAMBDA_NAME` (old env var name); fixed to `PROCESSOR_V2_LAMBDA_NAME`
+- `scripts/sync_check.py` same fix
+
+### Reprocess errors
+
+Ran `make neon-reprocess-errors` — found 42 errored photos and queued them all for reprocessing.
+
+### Usage
+  Current session                 
+  █████████████████                                  34% used                                                                                                                                    
+  Resets 12pm (America/New_York)                                                                                                                                                               
+
+  Current week (all models)
+  ████████████████████████████████████████▌          81% used
+  Resets 6pm (America/New_York)
+
+## Session — 2026-04-01
+
+### Stats — per-stat endpoints for progressive loading
+
+The stats page was slow because all metrics were fetched in a single `GET /stats` request, blocking until every stat (including slow S3 list-objects scans) completed.
+
+**Fix:** broke each stat into its own endpoint; frontend fires all 10 in parallel and updates each card as its response arrives.
+
+**Lambda (`lambda/stats.py`):**
+- Renamed all private helpers (dropped `_` prefix) so they can be imported individually
+- `get_stats()` kept intact for backwards compat
+
+**Lambda (`lambda/stats_handler.py`):**
+- Added 10 per-stat routes: `/stats/inbox-count`, `/stats/db-count`, `/stats/archived-count`, `/stats/inbox-s3-count`, `/stats/processed-s3-count`, `/stats/thumbnail-count`, `/stats/orphaned-thumbnails`, `/stats/orphaned-processed`, `/stats/orphaned-inbox`, `/stats/top-tags`
+- Each returns `{"value": ...}`
+- S3-only routes skip the DB connection entirely
+- `GET /stats` aggregate route kept for backwards compat
+
+**Frontend (`frontend/stats.html`):**
+- Grid shown immediately with `—` placeholders (no spinner)
+- 10 independent fetches; each card updates as its response arrives
+- `total-photos` computed client-side once inbox + db + archived all resolve
+- Per-card error state shows `err` in red
+
+### Bug fix — `deploy-frontend.sh` stack failures
+
+The frontend CloudFormation stack had been stuck in `UPDATE_ROLLBACK_COMPLETE` since 2026-03-31.
+
+**Root cause:** `FRONTEND_DOMAIN` was changed to include the `http://` scheme (for CORS), but `deploy-frontend.sh` was passing it as the CloudFormation `DomainName` parameter, which is used as the S3 bucket name. CloudFormation tried to rename the bucket to `http://lax.jsywulak.com`, hit an internal AWS bug, and rolled back.
+
+**Fix:** changed the script to use `FRONTEND_BUCKET` (scheme-free) for the CFN parameter and for the S3 upload target, instead of `FRONTEND_DOMAIN`. Also fixed the `Deployed:` echo line which was double-printing the scheme.
+
+### Usage
+
+  Current session                                                                                                                                                                                
+  ███████████████████████████████████████            78% used                                                                                                                                    
+  Resets 12pm (America/New_York)                                                                                                                                                                 
+                                                                                                                                                                                                 
+  Current week (all models)
+  ██████████████████████████████████████████▌        85% used
+  Resets 6pm (America/New_York)

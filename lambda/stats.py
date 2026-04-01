@@ -9,20 +9,20 @@ from pathlib import Path
 
 def get_stats(db_conn, s3_client, inbox_bucket, photos_bucket, thumbnail_bucket):
     """Return a dict of all stats metrics."""
-    inbox_count = _count_db_photos(db_conn, inbox_bucket)
-    db_count = _count_db_photos(db_conn, photos_bucket)
-    archived_count = _count_archived_photos(db_conn, inbox_bucket)
+    inbox_count = count_db_photos(db_conn, inbox_bucket)
+    db_count = count_db_photos(db_conn, photos_bucket)
+    archived_count = count_archived_photos(db_conn, inbox_bucket)
     total_photos = inbox_count + db_count + archived_count
 
-    inbox_s3_count = _count_s3_objects(s3_client, inbox_bucket)
-    processed_s3_count = _count_s3_objects(s3_client, photos_bucket)
-    thumbnail_count = _count_s3_objects(s3_client, thumbnail_bucket, prefix="thumbnails/")
+    inbox_s3_count = count_s3_objects(s3_client, inbox_bucket)
+    processed_s3_count = count_s3_objects(s3_client, photos_bucket)
+    thumbnail_count = count_s3_objects(s3_client, thumbnail_bucket, prefix="thumbnails/")
 
-    orphaned_thumbnails = _count_orphaned_thumbnails(db_conn, s3_client, thumbnail_bucket)
-    orphaned_processed = _count_orphaned_processed(db_conn, s3_client, photos_bucket)
-    orphaned_inbox = _count_orphaned_inbox(db_conn, s3_client, inbox_bucket)
+    orphaned_thumbnails = count_orphaned_thumbnails(db_conn, s3_client, thumbnail_bucket)
+    orphaned_processed = count_orphaned_processed(db_conn, s3_client, photos_bucket)
+    orphaned_inbox = count_orphaned_inbox(db_conn, s3_client, inbox_bucket)
 
-    top_tags = _get_top_tags(db_conn)
+    top_tags = get_top_tags(db_conn)
 
     return {
         "inbox_count": inbox_count,
@@ -40,7 +40,7 @@ def get_stats(db_conn, s3_client, inbox_bucket, photos_bucket, thumbnail_bucket)
     }
 
 
-def _count_s3_objects(s3_client, bucket, prefix=""):
+def count_s3_objects(s3_client, bucket, prefix=""):
     paginator = s3_client.get_paginator("list_objects_v2")
     kwargs = {"Bucket": bucket}
     if prefix:
@@ -51,7 +51,7 @@ def _count_s3_objects(s3_client, bucket, prefix=""):
     return total
 
 
-def _count_db_photos(db_conn, bucket):
+def count_db_photos(db_conn, bucket):
     with db_conn.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM photos WHERE bucket = %s AND archived_at IS NULL",
@@ -60,7 +60,7 @@ def _count_db_photos(db_conn, bucket):
         return cur.fetchone()[0]
 
 
-def _count_archived_photos(db_conn, inbox_bucket):
+def count_archived_photos(db_conn, inbox_bucket):
     with db_conn.cursor() as cur:
         cur.execute(
             "SELECT COUNT(*) FROM photos WHERE bucket = %s AND archived_at IS NOT NULL",
@@ -69,7 +69,7 @@ def _count_archived_photos(db_conn, inbox_bucket):
         return cur.fetchone()[0]
 
 
-def _count_orphaned_thumbnails(db_conn, s3_client, thumbnail_bucket):
+def count_orphaned_thumbnails(db_conn, s3_client, thumbnail_bucket):
     with db_conn.cursor() as cur:
         cur.execute("SELECT content_hash FROM photos WHERE content_hash IS NOT NULL")
         known_hashes = {row[0] for row in cur.fetchall()}
@@ -84,7 +84,7 @@ def _count_orphaned_thumbnails(db_conn, s3_client, thumbnail_bucket):
     return orphaned
 
 
-def _count_orphaned_processed(db_conn, s3_client, photos_bucket):
+def count_orphaned_processed(db_conn, s3_client, photos_bucket):
     with db_conn.cursor() as cur:
         cur.execute(
             "SELECT content_hash FROM photos WHERE bucket = %s AND content_hash IS NOT NULL",
@@ -102,7 +102,7 @@ def _count_orphaned_processed(db_conn, s3_client, photos_bucket):
     return orphaned
 
 
-def _count_orphaned_inbox(db_conn, s3_client, inbox_bucket):
+def count_orphaned_inbox(db_conn, s3_client, inbox_bucket):
     with db_conn.cursor() as cur:
         cur.execute(
             "SELECT s3_key FROM photos WHERE bucket = %s",
@@ -119,7 +119,7 @@ def _count_orphaned_inbox(db_conn, s3_client, inbox_bucket):
     return orphaned
 
 
-def _get_top_tags(db_conn):
+def get_top_tags(db_conn):
     with db_conn.cursor() as cur:
         cur.execute("""
             SELECT t.name, COUNT(pt.photo_id) AS photo_count

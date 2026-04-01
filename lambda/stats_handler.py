@@ -2,7 +2,17 @@
 stats_handler.py — AWS Lambda entry point for the stats dashboard.
 
 Routes:
-  GET /stats  — return all stats metrics
+  GET /stats                    — return all stats metrics (backwards compat)
+  GET /stats/inbox-count        — inbox photo count (DB)
+  GET /stats/db-count           — processed photo count (DB)
+  GET /stats/archived-count     — archived photo count (DB)
+  GET /stats/inbox-s3-count     — inbox S3 object count
+  GET /stats/processed-s3-count — processed S3 object count
+  GET /stats/thumbnail-count    — thumbnail S3 object count
+  GET /stats/orphaned-thumbnails — orphaned thumbnail count
+  GET /stats/orphaned-processed  — orphaned processed object count
+  GET /stats/orphaned-inbox      — orphaned inbox object count
+  GET /stats/top-tags            — top 5 tags by usage
 
 Environment variables required:
   NEON_DATABASE_URL  — Neon PostgreSQL connection string
@@ -20,7 +30,16 @@ from contextlib import contextmanager
 import boto3
 import psycopg2
 
-from stats import get_stats
+from stats import (
+    get_stats,
+    count_db_photos,
+    count_archived_photos,
+    count_s3_objects,
+    count_orphaned_thumbnails,
+    count_orphaned_processed,
+    count_orphaned_inbox,
+    get_top_tags,
+)
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -71,8 +90,52 @@ def lambda_handler(event, context):
     if headers.get("x-api-key") != _API_KEY:
         return _http_response(401, {"error": "Unauthorized"})
 
-    if method == "GET" and path == "/stats":
+    if method != "GET":
+        return _http_response(404, {"error": "Not found"})
+
+    # Backwards-compatible aggregate endpoint
+    if path == "/stats":
         with _db() as conn:
             return _http_response(200, get_stats(conn, _s3_client, _INBOX_BUCKET, _PHOTOS_BUCKET, _THUMBNAIL_BUCKET))
+
+    # Per-stat endpoints — DB only
+    if path == "/stats/inbox-count":
+        with _db() as conn:
+            return _http_response(200, {"value": count_db_photos(conn, _INBOX_BUCKET)})
+
+    if path == "/stats/db-count":
+        with _db() as conn:
+            return _http_response(200, {"value": count_db_photos(conn, _PHOTOS_BUCKET)})
+
+    if path == "/stats/archived-count":
+        with _db() as conn:
+            return _http_response(200, {"value": count_archived_photos(conn, _INBOX_BUCKET)})
+
+    if path == "/stats/top-tags":
+        with _db() as conn:
+            return _http_response(200, {"value": get_top_tags(conn)})
+
+    # Per-stat endpoints — S3 only (no DB connection needed)
+    if path == "/stats/inbox-s3-count":
+        return _http_response(200, {"value": count_s3_objects(_s3_client, _INBOX_BUCKET)})
+
+    if path == "/stats/processed-s3-count":
+        return _http_response(200, {"value": count_s3_objects(_s3_client, _PHOTOS_BUCKET)})
+
+    if path == "/stats/thumbnail-count":
+        return _http_response(200, {"value": count_s3_objects(_s3_client, _THUMBNAIL_BUCKET, "thumbnails/")})
+
+    # Per-stat endpoints — DB + S3
+    if path == "/stats/orphaned-thumbnails":
+        with _db() as conn:
+            return _http_response(200, {"value": count_orphaned_thumbnails(conn, _s3_client, _THUMBNAIL_BUCKET)})
+
+    if path == "/stats/orphaned-processed":
+        with _db() as conn:
+            return _http_response(200, {"value": count_orphaned_processed(conn, _s3_client, _PHOTOS_BUCKET)})
+
+    if path == "/stats/orphaned-inbox":
+        with _db() as conn:
+            return _http_response(200, {"value": count_orphaned_inbox(conn, _s3_client, _INBOX_BUCKET)})
 
     return _http_response(404, {"error": "Not found"})
