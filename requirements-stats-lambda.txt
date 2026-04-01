@@ -1,0 +1,4 @@
+# Pinned dependencies for the stats Lambda deployment package.
+# boto3 is omitted — it is pre-installed in the Lambda runtime.
+# Update these versions to match requirements-lock.txt when upgrading deps.
+psycopg2-binary==2.9.11

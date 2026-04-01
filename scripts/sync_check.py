@@ -23,7 +23,7 @@ def list_db_photos(conn, bucket: str) -> dict[str, dict]:
     with conn.cursor() as cur:
         cur.execute(
             "SELECT s3_key, processed_at, last_error FROM photos WHERE bucket = %s",
-            (bucket,),
+        (bucket,),
         )
         return {
             row[0]: {"processed_at": row[1], "last_error": row[2]}

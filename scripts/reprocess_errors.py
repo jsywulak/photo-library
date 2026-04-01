@@ -12,7 +12,7 @@ from helpers import db_connection, invoke_lambda, make_s3_event
 load_dotenv(Path(__file__).parents[1] / ".env")
 
 NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
-PROCESSOR_LAMBDA_NAME = os.environ["PROCESSOR_LAMBDA_NAME"]
+PROCESSOR_LAMBDA_NAME = os.environ["PROCESSOR_V2_LAMBDA_NAME"]
 
 
 def fetch_errored(conn) -> list[tuple[str, str]]:

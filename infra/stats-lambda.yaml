@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Stats Lambda
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  DeploymentKey:
+    Type: String
+    Default: stats.zip
+    Description: S3 key of the Lambda deployment zip
+
+  NeonDatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Neon PostgreSQL connection string
+
+  ApiKey:
+    Type: String
+    NoEcho: true
+    Description: Secret key required in the x-api-key request header
+
+  InboxBucket:
+    Type: String
+    Description: S3 bucket containing unprocessed photos
+
+  PhotosBucket:
+    Type: String
+    Description: S3 bucket containing processed photos
+
+  ThumbnailBucket:
+    Type: String
+    Description: S3 bucket containing thumbnails
+
+  FrontendDomain:
+    Type: String
+    Description: Full origin of the frontend, used to restrict CORS (e.g. http://lax.jsywulak.com)
+
+Resources:
+  StatsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StatsS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${InboxBucket}'
+                  - !Sub 'arn:aws:s3:::${PhotosBucket}'
+                  - !Sub 'arn:aws:s3:::${ThumbnailBucket}'
+
+  StatsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-stats'
+      Runtime: python3.12
+      Handler: stats_handler.lambda_handler
+      Role: !GetAtt StatsRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
+      Environment:
+        Variables:
+          NEON_DATABASE_URL: !Ref NeonDatabaseUrl
+          API_KEY: !Ref ApiKey
+          INBOX_BUCKET: !Ref InboxBucket
+          PHOTOS_BUCKET: !Ref PhotosBucket
+          THUMBNAIL_BUCKET: !Ref ThumbnailBucket
+          FRONTEND_DOMAIN: !Ref FrontendDomain
+
+  StatsFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      AuthType: NONE
+      TargetFunctionArn: !GetAtt StatsFunction.Arn
+
+  StatsFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt StatsFunction.Arn
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  # Required alongside InvokeFunctionUrl — Lambda URL invocations need both.
+  # The InvokedViaFunctionUrl condition restricts this to URL-triggered calls only,
+  # preventing direct lambda:InvokeFunction calls that would bypass the API key check.
+  StatsFunctionInvokeViaUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt StatsFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  StatsFunctionName:
+    Description: Lambda function name (use as STATS_LAMBDA_NAME in .env)
+    Value: !Ref StatsFunction
+
+  StatsFunctionUrl:
+    Description: HTTP endpoint for the stats lambda (use as STATS_URL in .env)
+    Value: !GetAtt StatsFunctionUrl.FunctionUrl

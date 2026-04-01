@@ -16,6 +16,7 @@ from behave import given, then, when
 
 FRONTEND_HTML = Path(__file__).parents[2] / "frontend" / "index.html"
 INBOX_HTML = Path(__file__).parents[2] / "frontend" / "inbox.html"
+STATS_HTML = Path(__file__).parents[2] / "frontend" / "stats.html"
 
 
 # ── Mock setup ───────────────────────────────────────────────────────────────
@@ -473,3 +474,161 @@ def step_load_more_hidden(context):
 def step_click_load_more(context):
     context.page.locator("#load-more-btn").click()
     context.page.wait_for_timeout(400)
+
+
+# ── Stats page ────────────────────────────────────────────────────────────────
+
+_FULL_MOCK_STATS = {
+    "inbox_count": 7, "photos_count": 142, "db_count": 138, "archived_count": 23,
+    "total_photos": 168, "inbox_s3_count": 4200, "processed_s3_count": 142,
+    "thumbnail_count": 130, "orphaned_thumbnails": 2, "orphaned_processed": 3,
+    "orphaned_inbox": 4, "top_tags": [],
+}
+
+
+@given("the stats API returns full mock stats")
+def step_stats_api_returns_full(context):
+    context.mock_stats = dict(_FULL_MOCK_STATS)
+    context.mock_stats_error = False
+
+
+@given("the stats API returns top_tags {tags_json}")
+def step_stats_api_returns_top_tags(context, tags_json):
+    context.mock_stats = {**_FULL_MOCK_STATS, "top_tags": json.loads(tags_json)}
+    context.mock_stats_error = False
+
+
+@given("the stats API returns an error")
+def step_stats_api_error(context):
+    context.mock_stats_error = True
+
+
+@when("I open the stats page")
+def step_open_stats(context):
+    page = context.browser.new_page()
+    context.page = page
+
+    def handle_lambda(route, request):
+        if getattr(context, "mock_stats_error", False):
+            route.fulfill(status=500, content_type="application/json",
+                          body=json.dumps({"error": "Internal Server Error"}))
+        else:
+            route.fulfill(status=200, content_type="application/json",
+                          body=json.dumps(context.mock_stats))
+
+    page.route("**lambda-url**", handle_lambda)
+    page.goto(STATS_HTML.as_uri())
+    # Wait for loading spinner to disappear — indicates fetch has completed
+    page.wait_for_selector("#stats-loading", state="hidden")
+
+
+@then("I see the inbox count as {n:d}")
+def step_see_inbox_count(context, n):
+    locator = context.page.locator("#inbox-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected inbox count {n}, got {actual!r}"
+
+
+@then("I see the photos count as {n:d}")
+def step_see_photos_count(context, n):
+    locator = context.page.locator("#photos-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected photos count {n}, got {actual!r}"
+
+
+@then("I see the db count as {n:d}")
+def step_see_db_count(context, n):
+    locator = context.page.locator("#db-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected db count {n}, got {actual!r}"
+
+
+@then("I see the archived count as {n:d}")
+def step_see_archived_count(context, n):
+    locator = context.page.locator("#archived-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected archived count {n}, got {actual!r}"
+
+
+@then("I see the total photos count as {n:d}")
+def step_see_total_photos_count(context, n):
+    locator = context.page.locator("#total-photos-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected total photos count {n}, got {actual!r}"
+
+
+@then("I see the inbox s3 count as {n:d}")
+def step_see_inbox_s3_count(context, n):
+    locator = context.page.locator("#inbox-s3-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected inbox s3 count {n}, got {actual!r}"
+
+
+@then("I see the processed s3 count as {n:d}")
+def step_see_processed_s3_count(context, n):
+    locator = context.page.locator("#processed-s3-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected processed s3 count {n}, got {actual!r}"
+
+
+@then("I see the thumbnail count as {n:d}")
+def step_see_thumbnail_count(context, n):
+    locator = context.page.locator("#thumbnail-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected thumbnail count {n}, got {actual!r}"
+
+
+@then("I see the orphaned thumbnails count as {n:d}")
+def step_see_orphaned_thumbnails(context, n):
+    locator = context.page.locator("#orphaned-thumbnails-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected orphaned thumbnails count {n}, got {actual!r}"
+
+
+@then("I see the orphaned processed count as {n:d}")
+def step_see_orphaned_processed(context, n):
+    locator = context.page.locator("#orphaned-processed-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected orphaned processed count {n}, got {actual!r}"
+
+
+@then("I see the orphaned inbox count as {n:d}")
+def step_see_orphaned_inbox(context, n):
+    locator = context.page.locator("#orphaned-inbox-count")
+    locator.wait_for()
+    actual = locator.inner_text().strip()
+    assert actual == str(n), f"Expected orphaned inbox count {n}, got {actual!r}"
+
+
+@then('the stat card "{label}" has an info icon')
+def step_stat_card_has_info_icon(context, label):
+    # Use exact label match via the .stat-label span to avoid partial text collisions
+    card = context.page.locator(".stat-card").filter(
+        has=context.page.locator(".stat-label", has_text=label)
+    ).first
+    card.wait_for()
+    icon = card.locator(".info-icon")
+    assert icon.count() > 0, f"Expected info icon in stat card '{label}', found none"
+
+
+@then('I see "{tag}" in the top tags list')
+def step_see_tag_in_top_tags(context, tag):
+    locator = context.page.locator("#top-tags-list")
+    locator.wait_for()
+    text = locator.inner_text()
+    assert tag in text, f"Expected {tag!r} in top tags list, got: {text!r}"
+
+
+@then("I see a stats error message")
+def step_see_stats_error(context):
+    context.page.locator("#stats-error").wait_for(state="visible")

@@ -1,3 +1,4 @@
 const SEARCHER_URL = 'https://your-function-url.lambda-url.us-east-1.on.aws/';
 const INBOX_URL = 'https://your-inbox-function-url.lambda-url.us-east-1.on.aws/';
+const STATS_URL = 'https://your-stats-function-url.lambda-url.us-east-1.on.aws/';
 const API_KEY = 'your-api-key';
