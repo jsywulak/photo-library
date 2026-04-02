@@ -6,6 +6,25 @@ import psycopg2
 from dotenv import load_dotenv
 
 
+def _delete_s3_prefix(s3_client, bucket, prefix):
+    """Delete all objects in bucket matching prefix."""
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
+
+
+TEST_S3_PREFIX = "testA6FA7E1D-"
+
+
+def _delete_s3_prefix(s3_client, bucket, prefix):
+    """Delete all objects in bucket with the given prefix."""
+    paginator = s3_client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
+
+
 def before_all(context):
     load_dotenv()
     context.db_url = os.environ["DATABASE_URL"]
@@ -73,7 +92,7 @@ def after_scenario(context, scenario):
                 # EventBridge Lambda invocations that fired after the primary s3_key cleanup.
                 if hasattr(context, "test_content_hash"):
                     cur.execute(
-                        "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'test-%%'",
+                        "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'testA6FA7E1D-%%'",
                         (context.test_content_hash, context.test_s3_bucket),
                     )
                 cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
@@ -110,3 +129,16 @@ def after_scenario(context, scenario):
             conn.close()
         except Exception:
             pass
+
+
+def after_all(context):
+    """Final sweep: delete any test-prefixed objects left in S3 by failed/slow cleanups."""
+    if not os.environ.get("S3_BUCKET"):
+        return
+    try:
+        s3 = boto3.client("s3")
+        _delete_s3_prefix(s3, os.environ["S3_BUCKET"], TEST_S3_PREFIX)
+        _delete_s3_prefix(s3, os.environ["THUMBNAIL_BUCKET"], f"thumbnails/{TEST_S3_PREFIX}")
+        _delete_s3_prefix(s3, os.environ["INBOX_BUCKET"], TEST_S3_PREFIX)
+    except Exception:
+        pass

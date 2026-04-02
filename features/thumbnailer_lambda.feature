@@ -24,3 +24,9 @@ Feature: Thumbnailer Lambda
     And a thumbnail already exists for the photo
     When the thumbnailer Lambda processes the photo
     Then the Lambda should return status "skipped"
+
+  Scenario: Thumbnail S3 object has source-hash metadata
+    Given the thumbnailer Lambda is deployed
+    And a test photo is uploaded to the photos bucket
+    When the thumbnailer Lambda processes the photo
+    Then the thumbnail should have source-hash metadata matching the photo's SHA-256

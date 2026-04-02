@@ -11,6 +11,7 @@ Thumbnails and source photos created during tests are deleted in after_scenario
 via environment.py.
 """
 
+import hashlib
 import io
 import json
 import os
@@ -42,7 +43,7 @@ def step_upload_test_photo_to_photos_bucket(context):
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
 
     boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
@@ -50,6 +51,7 @@ def step_upload_test_photo_to_photos_bucket(context):
     context.test_s3_bucket = bucket
     context.test_thumbnail_key = _thumbnail_key(s3_key)
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+    context.test_expected_source_hash = hashlib.sha256(images[0].read_bytes()).hexdigest()
 
 
 @given("a thumbnail already exists for the photo")
@@ -118,3 +120,17 @@ def step_thumbnail_dimensions(context):
 def step_lambda_status(context, expected_status):
     actual = context.thumbnailer_result.get("status")
     assert actual == expected_status, f"Expected status {expected_status!r}, got {actual!r}"
+
+
+@then("the thumbnail should have source-hash metadata matching the photo's SHA-256")
+def step_thumbnail_has_matching_source_hash(context):
+    s3 = boto3.client("s3")
+    response = s3.head_object(Bucket=context.test_thumbnail_bucket, Key=context.test_thumbnail_key)
+    metadata = response.get("Metadata", {})
+    assert "source-hash" in metadata, (
+        f"Expected 'source-hash' in thumbnail metadata, got: {metadata}"
+    )
+    assert metadata["source-hash"] == context.test_expected_source_hash, (
+        f"Expected source-hash {context.test_expected_source_hash!r}, "
+        f"got {metadata['source-hash']!r}"
+    )

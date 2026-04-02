@@ -12,6 +12,7 @@ processor_lambda_steps.py while both lambdas coexist.
 
 import json
 import os
+import struct
 import uuid
 from pathlib import Path
 
@@ -22,6 +23,16 @@ from common import neon_conn, thumbnail_key
 from infrastructure_steps import assert_eventbridge_rule_targets_lambda
 
 IMAGES_DIR = Path(__file__).parents[2] / "images"
+
+
+def _make_unique_jpeg(image_bytes: bytes) -> bytes:
+    """Insert a JPEG comment block containing a UUID before the EOI marker."""
+    assert image_bytes[-2:] == b"\xff\xd9", "Not a valid JPEG (missing EOI marker)"
+    uid = uuid.uuid4().bytes
+    comment_data = b"test-run-" + uid
+    length = len(comment_data) + 2
+    com_block = b"\xff\xfe" + struct.pack(">H", length) + comment_data
+    return image_bytes[:-2] + com_block + b"\xff\xd9"
 
 
 @given("the processor v2 Lambda is deployed")
@@ -52,7 +63,7 @@ def step_invoke_v2_lambda_missing_key(context):
         "Records": [{
             "s3": {
                 "bucket": {"name": os.environ["S3_BUCKET"]},
-                "object": {"key": f"test-{uuid.uuid4().hex[:8]}-nonexistent.jpg"},
+                "object": {"key": f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-nonexistent.jpg"},
             }
         }]
     }
@@ -78,7 +89,7 @@ def step_upload_test_photo_v2(context):
     bucket = os.environ["S3_BUCKET"]
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
-    image_bytes = images[0].read_bytes()
+    image_bytes = _make_unique_jpeg(images[0].read_bytes())
     content_hash = hashlib.sha256(image_bytes).hexdigest()
 
     # Pre-clean any stale Neon records with this content_hash left by delayed
@@ -87,7 +98,7 @@ def step_upload_test_photo_v2(context):
         conn = neon_conn()
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'test-%%'",
+                "DELETE FROM photos WHERE content_hash = %s AND bucket = %s AND s3_key LIKE 'testA6FA7E1D-%%'",
                 (content_hash, bucket),
             )
         conn.commit()
@@ -95,10 +106,10 @@ def step_upload_test_photo_v2(context):
     except Exception:
         pass
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
 
-    boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
+    boto3.client("s3").put_object(Bucket=bucket, Key=s3_key, Body=image_bytes, ContentType="image/jpeg")
     context.test_s3_key = s3_key
     context.test_s3_bucket = bucket
     context.test_thumbnail_key = thumbnail_key(s3_key)

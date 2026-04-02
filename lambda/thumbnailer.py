@@ -6,6 +6,7 @@ resizes to 400x400, and writes a WebP to the thumbnail bucket. Skips if the
 thumbnail already exists. The caller is responsible for passing an S3 client.
 """
 
+import hashlib
 import io
 import logging
 
@@ -36,6 +37,7 @@ def generate_thumbnail(s3_key: str, source_bucket: str, thumbnail_bucket: str, s
     # Fetch source image.
     obj = s3_client.get_object(Bucket=source_bucket, Key=s3_key)
     image_bytes = obj["Body"].read()
+    source_hash = hashlib.sha256(image_bytes).hexdigest()
 
     # Center-crop to square, then resize.
     img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
@@ -55,6 +57,7 @@ def generate_thumbnail(s3_key: str, source_bucket: str, thumbnail_bucket: str, s
         Key=thumb_key,
         Body=buf.read(),
         ContentType="image/webp",
+        Metadata={"source-hash": source_hash},
     )
 
     logger.info("Thumbnailed %s -> %s", s3_key, thumb_key)

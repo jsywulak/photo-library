@@ -38,7 +38,7 @@ def step_processed_photo_in_db_and_s3(context):
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
 
     boto3.client("s3").upload_file(str(images[0]), bucket, s3_key)
@@ -67,7 +67,7 @@ def step_inbox_photo_in_db_and_s3(context):
     images = list(IMAGES_DIR.glob("*.jpg")) + list(IMAGES_DIR.glob("*.jpeg"))
     assert images, f"No sample images found in {IMAGES_DIR}"
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = prefix + images[0].name
     content_hash = hashlib.sha256(images[0].read_bytes()).hexdigest()
 
@@ -132,4 +132,43 @@ def step_backfill_result_counts(context):
     )
     assert result["skipped"] == 1, (
         f"Expected 1 skipped, got {result['skipped']}"
+    )
+
+
+@when("the metadata backfill runs for that photo")
+def step_run_metadata_backfill(context):
+    from backfill_thumbnails import run_metadata_backfill
+
+    s3 = boto3.client("s3")
+    context.metadata_backfill_result = run_metadata_backfill(
+        rows=[(context.backfill_s3_key, None)],
+        source_bucket=context.backfill_source_bucket,
+        thumbnail_bucket=context.test_thumbnail_bucket,
+        s3_client=s3,
+    )
+
+
+@when("the inbox metadata backfill runs for that photo")
+def step_run_inbox_metadata_backfill(context):
+    from backfill_inbox_thumbnails import run_inbox_metadata_backfill
+
+    s3 = boto3.client("s3")
+    context.metadata_backfill_result = run_inbox_metadata_backfill(
+        rows=[(context.backfill_s3_key, context.backfill_content_hash)],
+        thumbnail_bucket=context.test_thumbnail_bucket,
+        s3_client=s3,
+    )
+
+
+@then("the thumbnail should have source-hash metadata")
+def step_thumbnail_has_source_hash_metadata(context):
+    s3 = boto3.client("s3")
+    response = s3.head_object(Bucket=context.test_thumbnail_bucket, Key=context.test_thumbnail_key)
+    metadata = response.get("Metadata", {})
+    assert "source-hash" in metadata, (
+        f"Expected 'source-hash' in thumbnail metadata, got: {metadata}"
+    )
+    source_hash = metadata["source-hash"]
+    assert len(source_hash) == 64 and all(c in "0123456789abcdef" for c in source_hash), (
+        f"Expected 64-char hex string for source-hash, got: {source_hash!r}"
     )

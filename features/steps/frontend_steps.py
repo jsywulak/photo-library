@@ -503,6 +503,20 @@ def step_stats_api_error(context):
     context.mock_stats_error = True
 
 
+_STAT_PATH_MAP = {
+    "inbox-count": "inbox_count",
+    "db-count": "db_count",
+    "archived-count": "archived_count",
+    "inbox-s3-count": "inbox_s3_count",
+    "processed-s3-count": "processed_s3_count",
+    "thumbnail-count": "thumbnail_count",
+    "orphaned-thumbnails": "orphaned_thumbnails",
+    "orphaned-processed": "orphaned_processed",
+    "orphaned-inbox": "orphaned_inbox",
+    "top-tags": "top_tags",
+}
+
+
 @when("I open the stats page")
 def step_open_stats(context):
     page = context.browser.new_page()
@@ -512,14 +526,29 @@ def step_open_stats(context):
         if getattr(context, "mock_stats_error", False):
             route.fulfill(status=500, content_type="application/json",
                           body=json.dumps({"error": "Internal Server Error"}))
-        else:
+            return
+        url = request.url
+        # Check mismatch before inbox-count to avoid substring collision
+        if "/stats/inbox-count-mismatch" in url:
             route.fulfill(status=200, content_type="application/json",
-                          body=json.dumps(context.mock_stats))
+                          body=json.dumps({"s3_count": 0, "db_count": 0}))
+            return
+        for path_seg, key in _STAT_PATH_MAP.items():
+            if f"/stats/{path_seg}" in url:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"value": context.mock_stats[key]}))
+                return
+        route.fulfill(status=404, content_type="application/json",
+                      body=json.dumps({"error": "Not found"}))
 
     page.route("**lambda-url**", handle_lambda)
     page.goto(STATS_HTML.as_uri())
-    # Wait for loading spinner to disappear — indicates fetch has completed
-    page.wait_for_selector("#stats-loading", state="hidden")
+    # Wait for at least one stat to load (either a value or "err")
+    page.wait_for_function(
+        "document.getElementById('inbox-count') && "
+        "document.getElementById('inbox-count').textContent.trim() !== '\u2014'",
+        timeout=5000,
+    )
 
 
 @then("I see the inbox count as {n:d}")

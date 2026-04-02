@@ -24,3 +24,15 @@ Feature: Thumbnail backfill script
     And a thumbnail already exists for the photo
     When the inbox backfill script runs for that photo
     Then the backfill result should show 0 thumbnailed and 1 skipped
+
+  Scenario: Backfill sets source-hash metadata on existing thumbnails
+    Given a processed photo exists in the database and S3
+    And a thumbnail already exists for the photo
+    When the metadata backfill runs for that photo
+    Then the thumbnail should have source-hash metadata
+
+  Scenario: Inbox backfill sets source-hash metadata on existing thumbnails
+    Given an inbox photo exists in the database and inbox S3 bucket
+    And a thumbnail already exists for the photo
+    When the inbox metadata backfill runs for that photo
+    Then the thumbnail should have source-hash metadata

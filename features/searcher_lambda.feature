@@ -9,7 +9,7 @@ Feature: Searcher Lambda
 
   Scenario: Searching returns ranked results
     Given the searcher Lambda is deployed
-    And a photo exists in the Neon database tagged with "cat, animal, indoor"
+    And a photo exists in the Neon database tagged with "cat, animal, wire"
     And a photo exists in the Neon database tagged with "cat, outdoor"
     When the Lambda is invoked with tags "cat, animal"
     Then the results should contain both photos
@@ -67,9 +67,9 @@ Feature: Searcher Lambda
   Scenario: POST /add-tags adds new tags to a photo
     Given the searcher Lambda is deployed
     And a photo exists in the Neon database tagged with "animal"
-    When the Function URL POST /add-tags is called for the photo with tags "indoor, cozy" and the correct API key
+    When the Function URL POST /add-tags is called for the photo with tags "wire, cozy" and the correct API key
     Then the HTTP response status should be 200
-    And searching for "indoor" via the Lambda should return the photo
+    And searching for "wire" via the Lambda should return the photo
 
   Scenario: POST /add-tags restores a previously removed tag
     Given the searcher Lambda is deployed

@@ -87,7 +87,7 @@ def step_upload_to_inbox_with_db_v2(context):
     if not hasattr(context, "neon_test_s3_keys"):
         context.neon_test_s3_keys = []
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = f"{prefix}photo.jpg"
     bucket = os.environ["INBOX_BUCKET"]
     content_hash = hashlib.sha256(_MINIMAL_JPEG).hexdigest()

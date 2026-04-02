@@ -136,6 +136,9 @@
     <h1>Stats</h1>
   </header>
 
+  <div id="stats-error" style="display:none;color:#c0392b;padding:0.75rem 2rem;font-size:0.875rem;">
+    Failed to load stats. Check your connection or API key.
+  </div>
   <div id="stats-container">
     <div class="stat-card">
       <span class="stat-label">
@@ -207,6 +210,13 @@
       </span>
       <span class="stat-value" id="orphaned-inbox-count">—</span>
     </div>
+    <div class="stat-card">
+      <span class="stat-label">
+        Inbox count check
+        <span class="info-icon" data-tooltip="Alert: S3 inbox objects should equal inbox + archived rows in the database.">ⓘ</span>
+      </span>
+      <span class="stat-value" id="inbox-mismatch-value">—</span>
+    </div>
     <div id="top-tags-section">
       <span class="stat-label">
         Top tags
@@ -229,6 +239,7 @@
       const el = document.getElementById(id);
       el.textContent = 'err';
       el.classList.add('error');
+      document.getElementById('stats-error').style.display = 'block';
     }
 
     function fetchStat(path) {
@@ -279,6 +290,19 @@
     fetchStat('/stats/orphaned-inbox')
       .then(v => set('orphaned-inbox-count', v))
       .catch(() => setError('orphaned-inbox-count'));
+
+    fetch(BASE_URL + '/stats/inbox-count-mismatch', { headers: HEADERS })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(data => {
+        const el = document.getElementById('inbox-mismatch-value');
+        if (data.s3_count !== data.db_count) {
+          el.textContent = `S3: ${data.s3_count}, DB: ${data.db_count}`;
+          el.classList.add('error');
+        } else {
+          el.textContent = 'OK';
+        }
+      })
+      .catch(() => setError('inbox-mismatch-value'));
 
     fetchStat('/stats/top-tags').then(tags => {
       const list = document.getElementById('top-tags-list');

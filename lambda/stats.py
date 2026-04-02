@@ -114,9 +114,18 @@ def count_orphaned_inbox(db_conn, s3_client, inbox_bucket):
     orphaned = 0
     for page in paginator.paginate(Bucket=inbox_bucket):
         for obj in page.get("Contents", []):
-            if obj["Key"] not in known_keys:
+            key = obj["Key"]
+            if not key.lower().endswith((".jpg", ".jpeg")):
+                continue
+            if key not in known_keys:
                 orphaned += 1
     return orphaned
+
+
+def check_inbox_count_mismatch(db_conn, s3_client, inbox_bucket):
+    s3_count = count_s3_objects(s3_client, inbox_bucket)
+    db_total = count_db_photos(db_conn, inbox_bucket) + count_archived_photos(db_conn, inbox_bucket)
+    return {"s3_count": s3_count, "db_count": db_total}
 
 
 def get_top_tags(db_conn):

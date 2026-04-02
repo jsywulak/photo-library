@@ -4,7 +4,7 @@ Feature: Frontend UI
   in a photo grid with a lightbox viewer.
 
   Background:
-    Given the tags API returns ["floral", "outdoor", "indoor"]
+    Given the tags API returns ["floral", "outdoor", "wire"]
     And the search API returns 0 results
 
   Scenario: Initial state shows a prompt

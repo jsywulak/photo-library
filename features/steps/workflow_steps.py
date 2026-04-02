@@ -54,7 +54,7 @@ def step_upload_photo(context):
     # as a duplicate of an already-processed production photo.
     image_bytes = _make_unique_jpeg(images[0].read_bytes())
     content_hash = hashlib.sha256(image_bytes).hexdigest()
-    s3_key = f"test-{uuid.uuid4().hex[:8]}-{images[0].name}"
+    s3_key = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-{images[0].name}"
     bucket = os.environ["S3_BUCKET"]
 
     # Pre-clean: remove all stale test- S3 objects and Neon records from the
@@ -66,7 +66,7 @@ def step_upload_photo(context):
     try:
         s3_client = boto3.client("s3")
         paginator = s3_client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix="test-"):
+        for page in paginator.paginate(Bucket=bucket, Prefix="testA6FA7E1D-"):
             for obj in page.get("Contents", []):
                 s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
     except Exception:
@@ -75,7 +75,7 @@ def step_upload_photo(context):
         conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
         with conn.cursor() as cur:
             cur.execute(
-                "DELETE FROM photos WHERE bucket = %s AND s3_key LIKE 'test-%%'",
+                "DELETE FROM photos WHERE bucket = %s AND s3_key LIKE 'testA6FA7E1D-%%'",
                 (bucket,),
             )
         conn.commit()

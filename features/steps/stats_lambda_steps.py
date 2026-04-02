@@ -74,6 +74,23 @@ def step_stats_response_has_fields(context):
         assert body[field] >= 0, f"Expected {field!r} >= 0, got {body[field]}"
 
 
+@when("the stats Function URL GET /stats/inbox-count-mismatch is called with the correct API key")
+def step_get_inbox_count_mismatch(context):
+    context.stats_http_status, context.stats_http_body = _api_get("/stats/inbox-count-mismatch")
+
+
+@then("the stats response body contains inbox-count-mismatch fields s3_count and db_count as non-negative integers")
+def step_stats_inbox_count_mismatch_fields(context):
+    body = context.stats_http_body
+    assert isinstance(body, dict), f"Expected dict response body, got: {type(body)}"
+    for field in ("s3_count", "db_count"):
+        assert field in body, f"Missing field {field!r} in response: {body}"
+        assert isinstance(body[field], int), (
+            f"Expected {field!r} to be an integer, got {type(body[field])}: {body[field]}"
+        )
+        assert body[field] >= 0, f"Expected {field!r} >= 0, got {body[field]}"
+
+
 @then("the stats response body contains top_tags as a list")
 def step_stats_response_has_top_tags(context):
     body = context.stats_http_body

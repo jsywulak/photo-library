@@ -61,7 +61,7 @@ def step_seed_photo(context, tags):
     if not hasattr(context, "neon_test_s3_keys"):
         context.neon_test_s3_keys = []
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = f"{prefix}photo.jpg"
     tag_list = [t.strip() for t in tags.split(",")]
 
@@ -84,7 +84,7 @@ def step_seed_n_photos(context, n, tags):
     tag_list = [t.strip() for t in tags.split(",")]
     conn = neon_conn()
     for _ in range(n):
-        s3_key = f"test-{uuid.uuid4().hex[:8]}-photo.jpg"
+        s3_key = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-photo.jpg"
         seed_photo(conn, s3_key, tag_list)
         context.neon_test_s3_keys.append(s3_key)
     conn.commit()
@@ -228,7 +228,7 @@ def step_upload_to_s3_and_seed(context, tags):
     if not hasattr(context, "searcher_s3_uploads"):
         context.searcher_s3_uploads = []
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     s3_key = f"{prefix}photo.jpg"
     bucket = os.environ["S3_BUCKET"]
 
@@ -328,6 +328,7 @@ def step_lambda_search_includes_photo_generic(context, tag):
         Payload=json.dumps({"tags": [tag]}),
     )
     results = json.loads(response["Payload"].read())
+    print(results)
     result_keys = {r["s3_key"] for r in results}
     assert context.last_photo_key in result_keys, (
         f"Expected {context.last_photo_key!r} in results for tag {tag!r}, got: {result_keys}"

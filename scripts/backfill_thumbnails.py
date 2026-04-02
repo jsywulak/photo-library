@@ -5,30 +5,34 @@ Invokes the thumbnailer Lambda synchronously for each s3_key in the database,
 relying on the Lambda's own skip logic to avoid re-processing existing thumbnails.
 """
 
+import hashlib
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-from helpers import db_connection, invoke_lambda
+from helpers import db_connection, invoke_lambda, thumbnail_key
 
 load_dotenv(Path(__file__).parents[1] / ".env")
 
 NEON_DATABASE_URL = os.environ["NEON_DATABASE_URL"]
 THUMBNAILER_LAMBDA_NAME = os.environ["THUMBNAILER_LAMBDA_NAME"]
+S3_BUCKET = os.environ["S3_BUCKET"]
+THUMBNAIL_BUCKET = os.environ["THUMBNAIL_BUCKET"]
 
 CONCURRENCY = 20
 
 
-def fetch_processed_keys(conn) -> list[str]:
+def fetch_processed_photos(conn) -> list[tuple[str, str | None]]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT s3_key FROM photos WHERE processed_at IS NOT NULL ORDER BY s3_key"
+            "SELECT s3_key, content_hash FROM photos WHERE processed_at IS NOT NULL ORDER BY s3_key"
         )
-        return [row[0] for row in cur.fetchall()]
+        return cur.fetchall()
 
 
 def run_backfill(s3_keys: list[str], lambda_client, lambda_name: str) -> dict:
@@ -61,27 +65,98 @@ def run_backfill(s3_keys: list[str], lambda_client, lambda_name: str) -> dict:
     return {"thumbnailed": thumbnailed, "skipped": skipped, "failed": failed}
 
 
+def run_metadata_backfill(
+    rows: list[tuple[str, str | None]],
+    source_bucket: str,
+    thumbnail_bucket: str,
+    s3_client,
+) -> dict:
+    """Set source-hash metadata on existing thumbnails. rows = [(s3_key, content_hash_or_None)]"""
+    updated = skipped = failed = 0
+    lock = threading.Lock()
+
+    def process(s3_key, content_hash):
+        thumb_key = thumbnail_key(s3_key)
+
+        try:
+            s3_client.head_object(Bucket=thumbnail_bucket, Key=thumb_key)
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+                return "skipped"
+            raise
+
+        if content_hash:
+            hash_hex = content_hash
+        else:
+            obj = s3_client.get_object(Bucket=source_bucket, Key=s3_key)
+            hash_hex = hashlib.sha256(obj["Body"].read()).hexdigest()
+
+        s3_client.copy_object(
+            Bucket=thumbnail_bucket,
+            Key=thumb_key,
+            CopySource={"Bucket": thumbnail_bucket, "Key": thumb_key},
+            MetadataDirective="REPLACE",
+            ContentType="image/webp",
+            Metadata={"source-hash": hash_hex},
+        )
+        return "updated"
+
+    with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+        futures = {executor.submit(process, s3_key, ch): s3_key for s3_key, ch in rows}
+        for future in as_completed(futures):
+            s3_key = futures[future]
+            try:
+                status = future.result()
+                with lock:
+                    if status == "updated":
+                        updated += 1
+                        print(f"  [updated]     {s3_key}")
+                    else:
+                        skipped += 1
+                        print(f"  [skipped]     {s3_key}")
+            except Exception as e:
+                with lock:
+                    print(f"  [error]       {s3_key}: {e}")
+                    failed += 1
+
+    return {"updated": updated, "skipped": skipped, "failed": failed}
+
+
 def main():
     with db_connection(NEON_DATABASE_URL) as conn:
-        keys = fetch_processed_keys(conn)
+        photos = fetch_processed_photos(conn)
 
-    if not keys:
+    if not photos:
         print("No processed photos found.")
         return
 
-    print(f"Found {len(keys)} processed photos. Generating thumbnails...\n")
+    print(f"Found {len(photos)} processed photos. Generating thumbnails...\n")
 
     lam = boto3.client("lambda")
     result = run_backfill(
-        s3_keys=keys,
+        s3_keys=[s3_key for s3_key, _ in photos],
         lambda_client=lam,
         lambda_name=THUMBNAILER_LAMBDA_NAME,
     )
 
     print(
-        f"\nDone. Thumbnailed: {result['thumbnailed']}, "
-        f"skipped: {result['skipped']}, "
-        f"failed: {result['failed']}."
+        f"\nThumbnail pass done. Thumbnailed: {result['thumbnailed']}, "
+        f"skipped: {result['skipped']}, failed: {result['failed']}."
+    )
+
+    print(f"\nPatching source-hash metadata on existing thumbnails...\n")
+
+    s3 = boto3.client("s3")
+    meta_result = run_metadata_backfill(
+        rows=photos,
+        source_bucket=S3_BUCKET,
+        thumbnail_bucket=THUMBNAIL_BUCKET,
+        s3_client=s3,
+    )
+
+    print(
+        f"\nMetadata pass done. Updated: {meta_result['updated']}, "
+        f"skipped: {meta_result['skipped']}, failed: {meta_result['failed']}."
     )
 
 

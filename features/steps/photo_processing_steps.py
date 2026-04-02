@@ -7,7 +7,7 @@ Steps interact only with:
   - The processor module (lambda/processor.py)
 
 Isolation note: files are copied into a temp dir with a unique per-run prefix
-(e.g. test-a1b2c3-photo1.jpg) so test s3_keys never collide with real data
+(e.g. testA6FA7E1D-a1b2c3-photo1.jpg) so test s3_keys never collide with real data
 that has been committed to the database by make process.
 """
 
@@ -42,7 +42,7 @@ def step_local_photos(context, photos):
     # Copy files to a temp dir with a unique prefix per scenario so s3_keys
     # can't clash with committed production data.
     names = [p.strip() for p in photos.split(",")]
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {name: prefix + name for name in names}
@@ -96,7 +96,7 @@ def step_oversized_image(context, filename):
         f"Padded JPEG too small: {len(image_bytes)} bytes"
     )
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
@@ -114,7 +114,7 @@ def step_corrupted_oversized_image(context, filename):
     """
     from processor import MAX_IMAGE_BYTES
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
@@ -135,7 +135,7 @@ def step_jpeg_with_exif(context, exif_datetime, filename):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", exif=exif.tobytes())
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
@@ -153,7 +153,7 @@ def step_jpeg_without_exif(context, filename):
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
 
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
@@ -163,7 +163,7 @@ def step_jpeg_without_exif(context, filename):
 
 @given('a local directory with an unsupported file "{filename}"')
 def step_unsupported_file(context, filename):
-    prefix = f"test-{uuid.uuid4().hex[:8]}-"
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}

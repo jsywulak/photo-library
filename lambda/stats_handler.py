@@ -38,6 +38,7 @@ from stats import (
     count_orphaned_thumbnails,
     count_orphaned_processed,
     count_orphaned_inbox,
+    check_inbox_count_mismatch,
     get_top_tags,
 )
 from utils import get_required_env
@@ -137,5 +138,9 @@ def lambda_handler(event, context):
     if path == "/stats/orphaned-inbox":
         with _db() as conn:
             return _http_response(200, {"value": count_orphaned_inbox(conn, _s3_client, _INBOX_BUCKET)})
+
+    if path == "/stats/inbox-count-mismatch":
+        with _db() as conn:
+            return _http_response(200, check_inbox_count_mismatch(conn, _s3_client, _INBOX_BUCKET))
 
     return _http_response(404, {"error": "Not found"})
