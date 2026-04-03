@@ -72,3 +72,15 @@ Feature: Photo search by tags
     And the tag "cat" is removed from "cat.jpg"
     When I search for "animal"
     Then the results for "cat.jpg" should not include the tag "cat"
+
+  Scenario: Search results can be paginated with a cursor
+    Given the database is empty
+    And a photo "photo1.jpg" tagged with "paginationtest"
+    And a photo "photo2.jpg" tagged with "paginationtest"
+    And a photo "photo3.jpg" tagged with "paginationtest"
+    When I search for "paginationtest" with limit 2
+    Then the results should contain 2 items
+    And a next cursor should be present
+    When I search for "paginationtest" with the next cursor and limit 2
+    Then the results should contain 1 item
+    And no next cursor should be present

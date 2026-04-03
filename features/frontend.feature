@@ -143,3 +143,26 @@ Feature: Frontend UI
     And I click the first photo
     And I click the lightbox backdrop
     Then the lightbox is hidden
+
+  Scenario: "Load more" button is hidden when all results fit on one page
+    Given the search API returns 3 results
+    When I open the frontend
+    And I click the "floral" suggestion
+    Then I see 3 photos in the grid
+    And the "Load more" button is hidden
+
+  Scenario: "Load more" button appears when more results are available
+    Given the search API returns 3 results with more available
+    When I open the frontend
+    And I click the "floral" suggestion
+    Then I see 3 photos in the grid
+    And the "Load more" button is visible
+
+  Scenario: Clicking "Load more" appends the next page to the grid
+    Given the search API returns 3 results with more available
+    When I open the frontend
+    And I click the "floral" suggestion
+    Then I see 3 photos in the grid
+    When I click the "Load more" button
+    Then I see 6 photos in the grid
+    And the "Load more" button is hidden

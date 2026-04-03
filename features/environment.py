@@ -23,14 +23,14 @@ def before_all(context):
 
 
 def before_feature(context, feature):
-    if "frontend" in feature.tags:
+    if "frontend" in feature.tags or "e2e" in feature.tags:
         from playwright.sync_api import sync_playwright
         context._playwright = sync_playwright().__enter__()
         context.browser = context._playwright.chromium.launch()
 
 
 def after_feature(context, feature):
-    if "frontend" in feature.tags:
+    if "frontend" in feature.tags or "e2e" in feature.tags:
         context.browser.close()
         context._playwright.stop()
 
@@ -41,6 +41,8 @@ def before_scenario(context, scenario):
         # Default mock data — individual scenarios can override with Given steps.
         context.mock_tags = []
         context.mock_results = []
+        context.mock_search_next_cursor = None
+        context.mock_search_second_page = None
         context.mock_inbox_results = []
         context.mock_process_error = False
         context.mock_archive_error = False
@@ -48,6 +50,9 @@ def before_scenario(context, scenario):
         context.mock_add_tags_error = False
         context.mock_stats_error = False
         context.page = None
+        return
+    if "e2e" in scenario.feature.tags:
+        context.page = context.browser.new_page()
         return
     if "infrastructure" not in scenario.feature.tags:
         context.conn = psycopg2.connect(context.db_url)
@@ -59,6 +64,10 @@ def after_scenario(context, scenario):
         if context.page:
             context.page.close()
         return
+    if "e2e" in scenario.feature.tags:
+        if hasattr(context, "page") and context.page:
+            context.page.close()
+        # Fall through to run S3/Neon cleanup same as infrastructure tests.
     if hasattr(context, "conn"):
         # Roll back any DB writes made during the scenario so each test starts clean.
         context.conn.rollback()

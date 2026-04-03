@@ -100,6 +100,31 @@ def step_search_returns_n(context, n):
         }
         for i in range(n)
     ]
+    context.mock_search_next_cursor = None
+    context.mock_search_second_page = None
+
+
+@given("the search API returns {n:d} results with more available")
+def step_search_returns_n_with_more(context, n):
+    context.mock_results = [
+        {
+            "s3_key": f"photo_{i}.jpg",
+            "url": f"https://presigned.example.com/photo_{i}.jpg",
+            "thumbnail_url": f"https://thumbnails.example.com/thumbnails/photo_{i}.webp",
+            "tags": ["floral", "outdoor"],
+        }
+        for i in range(n)
+    ]
+    context.mock_search_next_cursor = "some-cursor-value"
+    context.mock_search_second_page = [
+        {
+            "s3_key": f"photo_{n + i}.jpg",
+            "url": f"https://presigned.example.com/photo_{n + i}.jpg",
+            "thumbnail_url": f"https://thumbnails.example.com/thumbnails/photo_{n + i}.webp",
+            "tags": ["floral", "outdoor"],
+        }
+        for i in range(n)
+    ]
 
 
 # ── Page open ────────────────────────────────────────────────────────────────
@@ -207,10 +232,23 @@ def step_open_frontend(context):
                 route.fulfill(status=200, content_type="application/json",
                               body=json.dumps({"added": 1}))
         else:
+            body = json.loads(request.post_data or "{}")
+            if body.get("cursor") and getattr(context, "mock_search_second_page", None) is not None:
+                payload = {
+                    "items": context.mock_search_second_page,
+                    "next_cursor": None,
+                    "total": len(context.mock_results) + len(context.mock_search_second_page),
+                }
+            else:
+                payload = {
+                    "items": context.mock_results,
+                    "next_cursor": getattr(context, "mock_search_next_cursor", None),
+                    "total": len(context.mock_results),
+                }
             route.fulfill(
                 status=200,
                 content_type="application/json",
-                body=json.dumps(context.mock_results),
+                body=json.dumps(payload),
             )
 
     # Intercept all requests to the Lambda Function URL (tags + search).

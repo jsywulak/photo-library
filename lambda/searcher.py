@@ -7,12 +7,19 @@ of the searched tags each photo has. Photos with no matching tags are excluded.
 Each result includes:
   - url: a presigned S3 URL valid for 1 hour for full-size image display
   - thumbnail_url: a public URL to the WebP thumbnail in the thumbnail bucket
+
+Returns a paginated envelope:
+  {"items": [...], "next_cursor": str | None, "total": int}
 """
+
+import base64
+import json
 
 from utils import thumbnail_key as _thumbnail_key
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
+_SEARCH_PAGE_SIZE = 200
 
 
 def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
@@ -21,6 +28,23 @@ def _thumbnail_url(s3_key: str, thumbnail_bucket: str) -> str:
 
 def _normalise_tags(tags: list[str]) -> list[str]:
     return [t.strip().lower() for t in tags if t.strip()]
+
+
+def _encode_cursor(match_count: int, row_id: int) -> str:
+    return base64.urlsafe_b64encode(
+        json.dumps({"mc": match_count, "id": row_id}).encode()
+    ).decode().rstrip("=")
+
+
+def _decode_cursor(cursor) -> tuple:
+    if cursor is None:
+        return None, None
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        return decoded["mc"], decoded["id"]
+    except Exception:
+        raise ValueError(f"Invalid cursor: {cursor!r}")
 
 
 def get_random_tags(db_conn, count: int = _DEFAULT_TAG_COUNT) -> list[str]:
@@ -90,39 +114,69 @@ def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
     return updated > 0
 
 
-_DEFAULT_SEARCH_LIMIT = 200
+def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None,
+           limit: int = _SEARCH_PAGE_SIZE, cursor=None) -> dict:
+    """Search for photos matching any of the given tags.
 
-
-def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None, limit: int = _DEFAULT_SEARCH_LIMIT) -> list[dict]:
+    Returns a paginated envelope: {"items": [...], "next_cursor": str | None, "total": int}
+    """
     normalised = _normalise_tags(tags)
+    cursor_mc, cursor_id = _decode_cursor(cursor)
+
     with db_conn.cursor() as cur:
         cur.execute(
             """
-            SELECT p.s3_key,
-                   COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) AS match_count,
-                   array_agg(t.name ORDER BY t.name) AS tags
-            FROM photos p
-            JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
-            JOIN tags t        ON t.id = pt.tag_id
-            GROUP BY p.id, p.s3_key
-            HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
-            ORDER BY match_count DESC
+            SELECT COUNT(*) FROM (
+                SELECT p.id FROM photos p
+                JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
+                JOIN tags t ON t.id = pt.tag_id
+                GROUP BY p.id
+                HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
+            ) AS sub
+            """,
+            (normalised,),
+        )
+        total = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            WITH ranked AS (
+                SELECT p.id, p.s3_key,
+                       COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) AS match_count,
+                       array_agg(t.name ORDER BY t.name) AS tags
+                FROM photos p
+                JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
+                JOIN tags t        ON t.id = pt.tag_id
+                GROUP BY p.id, p.s3_key
+                HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
+            )
+            SELECT id, s3_key, match_count, tags FROM ranked
+            WHERE %s IS NULL
+               OR match_count < %s
+               OR (match_count = %s AND id > %s)
+            ORDER BY match_count DESC, id ASC
             LIMIT %s
             """,
-            (normalised, normalised, limit),
+            (normalised, normalised, cursor_id, cursor_mc, cursor_mc, cursor_id, limit + 1),
         )
         rows = cur.fetchall()
 
-    results = []
-    for row in rows:
-        entry = {"s3_key": row[0], "match_count": row[1], "tags": row[2]}
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    last = rows[-1] if (has_more and rows) else None
+    next_cursor = _encode_cursor(last[2], last[0]) if last else None
+
+    items = []
+    for row_id, key, _match_count, row_tags in rows:
+        entry = {"s3_key": key, "match_count": _match_count, "tags": row_tags}
         if s3_client and bucket:
             entry["url"] = s3_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": bucket, "Key": row[0]},
+                Params={"Bucket": bucket, "Key": key},
                 ExpiresIn=_PRESIGNED_URL_EXPIRY,
             )
         if thumbnail_bucket:
-            entry["thumbnail_url"] = _thumbnail_url(row[0], thumbnail_bucket)
-        results.append(entry)
-    return results
+            entry["thumbnail_url"] = _thumbnail_url(key, thumbnail_bucket)
+        items.append(entry)
+
+    return {"items": items, "next_cursor": next_cursor, "total": total}

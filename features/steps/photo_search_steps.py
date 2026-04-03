@@ -49,7 +49,29 @@ def step_search(context, tags):
     import searcher
 
     tag_list = [t.strip() for t in tags.split(",")]
-    context.results = searcher.search(tag_list, context.conn)
+    result = searcher.search(tag_list, context.conn)
+    context.results = result["items"]
+    context.next_cursor = result["next_cursor"]
+
+
+@when('I search for "{tags}" with limit {limit:d}')
+def step_search_with_limit(context, tags, limit):
+    import searcher
+
+    tag_list = [t.strip() for t in tags.split(",")]
+    result = searcher.search(tag_list, context.conn, limit=limit)
+    context.results = result["items"]
+    context.next_cursor = result["next_cursor"]
+
+
+@when('I search for "{tags}" with the next cursor and limit {limit:d}')
+def step_search_with_cursor(context, tags, limit):
+    import searcher
+
+    tag_list = [t.strip() for t in tags.split(",")]
+    result = searcher.search(tag_list, context.conn, limit=limit, cursor=context.next_cursor)
+    context.results = result["items"]
+    context.next_cursor = result["next_cursor"]
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +93,23 @@ def step_results_contain(context, s3_key):
 def step_results_not_contain(context, s3_key):
     keys = [r["s3_key"] for r in context.results]
     assert s3_key not in keys, f"Expected {s3_key!r} absent from results, got: {keys}"
+
+
+@then("the results should contain {n:d} item")
+@then("the results should contain {n:d} items")
+def step_results_contain_n_items(context, n):
+    count = len(context.results)
+    assert count == n, f"Expected {n} items, got {count}"
+
+
+@then("a next cursor should be present")
+def step_next_cursor_present(context):
+    assert context.next_cursor is not None, "Expected a next_cursor but got None"
+
+
+@then("no next cursor should be present")
+def step_no_next_cursor(context):
+    assert context.next_cursor is None, f"Expected no next_cursor but got: {context.next_cursor!r}"
 
 
 @then('the results for "{s3_key}" should not include the tag "{tag}"')

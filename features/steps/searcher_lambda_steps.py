@@ -104,7 +104,8 @@ def step_invoke_searcher(context, tags):
     assert "FunctionError" not in response, (
         f"Lambda error: {json.loads(response['Payload'].read())}"
     )
-    context.search_results = json.loads(response["Payload"].read())
+    result = json.loads(response["Payload"].read())
+    context.search_results = result["items"] if isinstance(result, dict) else result
 
 
 @when('the Lambda is invoked with tags "{tags}" and a limit of {limit:d}')
@@ -120,7 +121,8 @@ def step_invoke_searcher_with_limit(context, tags, limit):
     assert "FunctionError" not in response, (
         f"Lambda error: {json.loads(response['Payload'].read())}"
     )
-    context.search_results = json.loads(response["Payload"].read())
+    result = json.loads(response["Payload"].read())
+    context.search_results = result["items"] if isinstance(result, dict) else result
 
 
 @then("the results should contain exactly {n:d} photos")
@@ -193,6 +195,9 @@ def step_response_at_most_20(context):
 def step_function_url_correct_key(context, tags):
     tag_list = [t.strip() for t in tags.split(",")]
     context.http_status, context.http_body = _api_post("/", {"tags": tag_list})
+    # Normalise: non-paginated calls return a flat list; wrap for uniform access
+    if isinstance(context.http_body, list):
+        context.http_body = {"items": context.http_body}
 
 
 @when("the Function URL is called with a string tags payload and the correct API key")
@@ -215,7 +220,8 @@ def step_http_status(context, status):
 
 @then("the response body should contain the photo")
 def step_response_contains_photo(context):
-    result_keys = {r["s3_key"] for r in context.http_body}
+    items = context.http_body["items"] if isinstance(context.http_body, dict) else context.http_body
+    result_keys = {r["s3_key"] for r in items}
     assert context.last_photo_key in result_keys, (
         f"Expected {context.last_photo_key!r} in response, got: {result_keys}"
     )
@@ -327,7 +333,8 @@ def step_lambda_search_includes_photo_generic(context, tag):
         InvocationType="RequestResponse",
         Payload=json.dumps({"tags": [tag]}),
     )
-    results = json.loads(response["Payload"].read())
+    raw = json.loads(response["Payload"].read())
+    results = raw["items"] if isinstance(raw, dict) else raw
     print(results)
     result_keys = {r["s3_key"] for r in results}
     assert context.last_photo_key in result_keys, (
@@ -356,7 +363,8 @@ def step_lambda_search_excludes_photo(context, tag):
         InvocationType="RequestResponse",
         Payload=json.dumps({"tags": [tag]}),
     )
-    results = json.loads(response["Payload"].read())
+    raw = json.loads(response["Payload"].read())
+    results = raw["items"] if isinstance(raw, dict) else raw
     result_keys = {r["s3_key"] for r in results}
     assert context.last_photo_key not in result_keys, (
         f"Expected {context.last_photo_key!r} to be absent after tag removal, got: {result_keys}"
@@ -371,17 +379,50 @@ def step_lambda_search_includes_photo(context, tag):
         InvocationType="RequestResponse",
         Payload=json.dumps({"tags": [tag]}),
     )
-    results = json.loads(response["Payload"].read())
+    raw = json.loads(response["Payload"].read())
+    results = raw["items"] if isinstance(raw, dict) else raw
     result_keys = {r["s3_key"] for r in results}
     assert context.last_photo_key in result_keys, (
         f"Expected {context.last_photo_key!r} in results for tag {tag!r}, got: {result_keys}"
     )
 
 
+@when('the Function URL is called with tags "{tags}", limit {limit:d}, paginate true, and the correct API key')
+def step_function_url_paginate_first(context, tags, limit):
+    tag_list = [t.strip() for t in tags.split(",")]
+    context.http_status, context.http_body = _api_post("/", {"tags": tag_list, "limit": limit, "paginate": True})
+
+
+@when('the Function URL is called with tags "{tags}", the next cursor, paginate true, and the correct API key')
+def step_function_url_paginate_next(context, tags):
+    tag_list = [t.strip() for t in tags.split(",")]
+    context.http_status, context.http_body = _api_post(
+        "/", {"tags": tag_list, "cursor": context.search_next_cursor, "paginate": True}
+    )
+
+
+@then("the response should contain {n:d} items and a next_cursor")
+def step_response_has_items_and_cursor(context, n):
+    assert isinstance(context.http_body, dict), f"Expected a dict response, got: {type(context.http_body)}"
+    items = context.http_body.get("items", [])
+    assert len(items) == n, f"Expected {n} items, got {len(items)}"
+    assert context.http_body.get("next_cursor"), f"Expected a next_cursor, got: {context.http_body.get('next_cursor')!r}"
+    context.search_next_cursor = context.http_body["next_cursor"]
+
+
+@then("the response should contain {n:d} item and no next_cursor")
+def step_response_has_items_no_cursor(context, n):
+    assert isinstance(context.http_body, dict), f"Expected a dict response, got: {type(context.http_body)}"
+    items = context.http_body.get("items", [])
+    assert len(items) == n, f"Expected {n} items, got {len(items)}"
+    assert context.http_body.get("next_cursor") is None, f"Expected no next_cursor, got: {context.http_body.get('next_cursor')!r}"
+
+
 @then("the presigned URL for the photo should return HTTP 200")
 def step_presigned_url_accessible(context):
+    items = context.http_body["items"] if isinstance(context.http_body, dict) else context.http_body
     result = next(
-        (r for r in context.http_body if r["s3_key"] == context.last_photo_key), None
+        (r for r in items if r["s3_key"] == context.last_photo_key), None
     )
     assert result is not None, f"Photo {context.last_photo_key!r} not found in results"
     assert "url" in result, f"Result missing 'url' field: {result}"

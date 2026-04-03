@@ -243,6 +243,25 @@
     }
 
     .lightbox-close:hover { color: #ccc; }
+
+    #load-more-area {
+      padding: 1.5rem 2rem;
+      text-align: center;
+      display: none;
+    }
+
+    #load-more-btn {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      color: #888;
+      cursor: pointer;
+      font-size: 0.875rem;
+      padding: 0.5rem 1.5rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #load-more-btn:hover { border-color: #444; color: #ccc; }
   </style>
 </head>
 <body>
@@ -261,6 +280,9 @@
 
   <div id="status" class="status">Add a tag to search.</div>
   <div id="grid" class="grid"></div>
+  <div id="load-more-area">
+    <button id="load-more-btn">Load more</button>
+  </div>
 
   <div class="lightbox hidden" id="lightbox">
     <button class="lightbox-close" id="lightbox-close">&times;</button>
@@ -281,9 +303,12 @@
     const lightbox     = document.getElementById('lightbox');
     const lightboxImg  = document.getElementById('lightbox-img');
     const lightboxTags = document.getElementById('lightbox-tags');
+    const loadMoreArea = document.getElementById('load-more-area');
+    const loadMoreBtn  = document.getElementById('load-more-btn');
 
     let tags = [];
     let debounceTimer = null;
+    let nextCursor = null;
 
     // ── Chip management ──────────────────────────────────────────────────────
 
@@ -370,8 +395,10 @@
 
     function scheduleSearch() {
       clearTimeout(debounceTimer);
+      nextCursor = null;
       if (tags.length === 0) {
         grid.innerHTML = '';
+        loadMoreArea.style.display = 'none';
         status.textContent = 'Add a tag to search.';
         status.style.display = '';
         return;
@@ -379,32 +406,41 @@
       status.textContent = 'Searching…';
       status.style.display = '';
       grid.innerHTML = '';
-      debounceTimer = setTimeout(doSearch, 400);
+      loadMoreArea.style.display = 'none';
+      debounceTimer = setTimeout(() => doSearch(null), 400);
     }
 
-    async function doSearch() {
+    async function doSearch(cursor) {
+      const body = { tags, paginate: true };
+      if (cursor) body.cursor = cursor;
       try {
         const res = await fetch(BASE_URL, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
-          body: JSON.stringify({ tags }),
+          body: JSON.stringify(body),
         });
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const results = await res.json();
-        renderGrid(results);
+        const data = await res.json();
+        const items = data.items ?? data;
+        const append = cursor !== null;
+        nextCursor = data.next_cursor ?? null;
+        renderGrid(items, append);
+        loadMoreArea.style.display = nextCursor ? 'block' : 'none';
       } catch (err) {
         status.textContent = `Error: ${err.message}`;
         status.style.display = '';
       }
     }
 
+    loadMoreBtn.addEventListener('click', () => doSearch(nextCursor));
+
     // ── Grid ──────────────────────────────────────────────────────────────────
 
-    function renderGrid(results) {
-      grid.innerHTML = '';
+    function renderGrid(results, append) {
+      if (!append) grid.innerHTML = '';
 
-      if (results.length === 0) {
+      if (!append && results.length === 0) {
         status.textContent = 'No photos found.';
         status.style.display = '';
         return;

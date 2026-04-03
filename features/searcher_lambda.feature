@@ -110,3 +110,13 @@ Feature: Searcher Lambda
     When the Lambda is invoked with tags "limit-test" and a limit of 3
     Then the results should contain exactly 3 photos
 
+  Scenario: Search results are paginated via the Function URL
+    Given the searcher Lambda is deployed
+    And 3 photos exist in the Neon database tagged with "pagination-test"
+    When the Function URL is called with tags "pagination-test", limit 2, paginate true, and the correct API key
+    Then the HTTP response status should be 200
+    And the response should contain 2 items and a next_cursor
+    When the Function URL is called with tags "pagination-test", the next cursor, paginate true, and the correct API key
+    Then the HTTP response status should be 200
+    And the response should contain 1 item and no next_cursor
+

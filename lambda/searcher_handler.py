@@ -129,14 +129,23 @@ def lambda_handler(event, context):
         return _http_response(400, body) if is_function_url else body
 
     if is_function_url:
+        paginate = bool((payload or {}).get("paginate", False))
+        cursor = (payload or {}).get("cursor") or None
         raw_limit = (payload or {}).get("limit", 200)
-        limit = max(1, min(int(raw_limit), 200))
+        try:
+            limit = max(1, min(int(raw_limit), 200)) if not paginate else max(1, int(raw_limit))
+        except (ValueError, TypeError):
+            return _http_response(400, {"error": "limit must be an integer"})
     else:
+        paginate = False
+        cursor = None
         limit = int(event.get("limit", _DEFAULT_DIRECT_LIMIT))
 
-    logger.info("Searching for tags: %s (limit=%d)", tags, limit)
+    logger.info("Searching for tags: %s (limit=%d, paginate=%s)", tags, limit, paginate)
 
     with _db() as conn:
-        results = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET, limit=limit)
-        logger.info("Found %d results", len(results))
-        return _http_response(200, results) if is_function_url else results
+        result = search(tags, conn, _s3_client, _S3_BUCKET, _THUMBNAIL_BUCKET, limit=limit, cursor=cursor)
+        logger.info("Found %d results (total=%d)", len(result["items"]), result["total"])
+        if is_function_url:
+            return _http_response(200, result if paginate else result["items"])
+        return result["items"]
