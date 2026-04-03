@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Photo Tagger — Image handler Lambda
+
+Parameters:
+  DeploymentBucket:
+    Type: String
+    Description: S3 bucket containing the Lambda deployment zip
+
+  DeploymentKey:
+    Type: String
+    Default: image.zip
+    Description: S3 key of the Lambda deployment zip
+
+  UploadBucket:
+    Type: String
+    Description: S3 staging bucket where photos are uploaded
+
+  InboxBucket:
+    Type: String
+    Description: S3 bucket for unprocessed inbox photos
+
+  ThumbnailBucket:
+    Type: String
+    Default: photo-tagging-thumbnails
+    Description: S3 bucket to write thumbnails to
+
+Resources:
+  ImageHandlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:aws:s3:::${UploadBucket}/*'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${InboxBucket}/*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${ThumbnailBucket}/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${ThumbnailBucket}'
+
+  ImageHandlerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-image'
+      Runtime: python3.12
+      Handler: image_handler.lambda_handler
+      Role: !GetAtt ImageHandlerRole.Arn
+      Timeout: 60
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadBucket
+          INBOX_BUCKET: !Ref InboxBucket
+          THUMBNAIL_BUCKET: !Ref ThumbnailBucket
+
+  ImageHandlerEventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref UploadBucket
+      Targets:
+        - Id: ImageHandlerLambdaTarget
+          Arn: !GetAtt ImageHandlerFunction.Arn
+
+  ImageHandlerEventBridgePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ImageHandlerFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ImageHandlerEventBridgeRule.Arn
+
+Outputs:
+  ImageHandlerFunctionName:
+    Description: Lambda function name (use as IMAGE_LAMBDA_NAME in .env)
+    Value: !Ref ImageHandlerFunction
+
+  ImageHandlerFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ImageHandlerFunction.Arn

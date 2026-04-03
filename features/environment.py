@@ -6,14 +6,6 @@ import psycopg2
 from dotenv import load_dotenv
 
 
-def _delete_s3_prefix(s3_client, bucket, prefix):
-    """Delete all objects in bucket matching prefix."""
-    paginator = s3_client.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            s3_client.delete_object(Bucket=bucket, Key=obj["Key"])
-
-
 TEST_S3_PREFIX = "testA6FA7E1D-"
 
 
@@ -100,6 +92,15 @@ def after_scenario(context, scenario):
             conn.close()
         except Exception:
             pass
+    # Clean up source photo uploaded to the upload bucket by image handler tests
+    # (covers the case where the test fails before the handler deletes it).
+    if hasattr(context, "test_upload_s3_key"):
+        try:
+            boto3.client("s3").delete_object(
+                Bucket=os.environ["UPLOAD_BUCKET"], Key=context.test_upload_s3_key
+            )
+        except Exception:
+            pass
     # Clean up thumbnail and source photo uploaded by thumbnailer Lambda tests.
     if hasattr(context, "test_thumbnail_key"):
         s3 = boto3.client("s3")
@@ -140,5 +141,7 @@ def after_all(context):
         _delete_s3_prefix(s3, os.environ["S3_BUCKET"], TEST_S3_PREFIX)
         _delete_s3_prefix(s3, os.environ["THUMBNAIL_BUCKET"], f"thumbnails/{TEST_S3_PREFIX}")
         _delete_s3_prefix(s3, os.environ["INBOX_BUCKET"], TEST_S3_PREFIX)
+        if os.environ.get("UPLOAD_BUCKET"):
+            _delete_s3_prefix(s3, os.environ["UPLOAD_BUCKET"], TEST_S3_PREFIX)
     except Exception:
         pass

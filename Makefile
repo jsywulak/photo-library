@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer package-stats deploy-stats backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend process search db-drop package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer package-stats deploy-stats package-image deploy-image backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket deploy-upload-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -34,6 +34,8 @@ help:
 	@echo "  make sync-inbox                 Re-trigger EventBridge for pre-existing inbox photos"
 	@echo "  make deploy-photos-bucket  Deploy the photos S3 bucket stack"
 	@echo "  make deploy-inbox-bucket   Deploy the inbox S3 bucket stack"
+	@echo "  make deploy-upload-bucket  Deploy the upload staging S3 bucket stack"
+	@echo "  make deploy-image          Build and deploy the image handler Lambda"
 	@echo "  make deploy-frontend  Upload frontend to S3"
 	@echo ""
 	@echo "Data Integrity checks:"
@@ -137,6 +139,15 @@ package-stats:
 
 deploy-stats: package-stats
 	@bash scripts/deploy-stats.sh
+
+deploy-upload-bucket:
+	@bash scripts/deploy-upload-bucket.sh
+
+package-image:
+	@bash scripts/package-image.sh
+
+deploy-image: package-image
+	@bash scripts/deploy-image.sh
 
 deploy-frontend:
 	@bash scripts/deploy-frontend.sh

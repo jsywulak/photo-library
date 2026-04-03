@@ -16,7 +16,7 @@ Feature: Frontend UI
     When I open the frontend
     Then I see a suggestion button for "floral"
     And I see a suggestion button for "outdoor"
-    And I see a suggestion button for "indoor"
+    And I see a suggestion button for "wire"
 
   Scenario: Clicking a suggestion adds it as a chip
     When I open the frontend

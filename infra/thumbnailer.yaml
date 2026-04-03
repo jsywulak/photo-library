@@ -17,7 +17,7 @@ Parameters:
 
   InboxBucket:
     Type: String
-    Description: S3 bucket for unprocessed inbox photos
+    Description: S3 bucket for inbox photos (read access for direct backfill invocations)
 
   ThumbnailBucketName:
     Type: String
@@ -107,7 +107,6 @@ Resources:
           bucket:
             name:
               - !Ref PhotosBucket
-              - !Ref InboxBucket
       Targets:
         - Id: ThumbnailerLambdaTarget
           Arn: !GetAtt ThumbnailerFunction.Arn
