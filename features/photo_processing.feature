@@ -31,6 +31,12 @@ Feature: Photo processing pipeline
     Then 0 photos should be processed
     And "photo.nef" should not be saved to the database
 
+  Scenario: A JPEG-named file with non-image content is silently skipped
+    Given a local directory with a non-image file named "video.jpg"
+    When the processor runs
+    Then 0 photos should be processed
+    And "video.jpg" should not be saved to the database
+
   Scenario: Images larger than the base64 limit are resized and tagged successfully
     Given a local directory with an oversized image "large_photo.jpg"
     When the processor runs

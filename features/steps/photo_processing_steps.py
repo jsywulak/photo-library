@@ -106,19 +106,38 @@ def step_oversized_image(context, filename):
 
 @given('a local directory with a corrupted oversized image "{filename}"')
 def step_corrupted_oversized_image(context, filename):
-    """Create a file that is too large to skip resizing but is not valid JPEG.
+    """Create a file that PIL identifies as JPEG but fails to decode.
 
-    _prepare_image() will call Image.open() on anything above MAX_IMAGE_BYTES,
-    which raises an exception on non-JPEG data — triggering the error-logging
-    path without needing to call the Anthropic API.
+    Uses a real JPEG header (so PIL accepts the format) followed by random
+    bytes padded to exceed MAX_IMAGE_BYTES. PIL identifies it as JPEG via the
+    SOI marker, but raises an error when it hits the corrupt scan data during
+    .convert("RGB") — triggering the error-logging path without calling the
+    Anthropic API. Random (not zero) padding is required because zeros are
+    valid Huffman codes that PIL can decode as black pixels.
     """
+    import io as _io
+    import os as _os
     from processor import MAX_IMAGE_BYTES
+    from PIL import Image as _Image
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (100, 100)).save(buf, "JPEG")
+    valid_jpeg = buf.getvalue()
+
+    # Include the JPEG headers up through and including the SOS (Start of Scan)
+    # header so PIL can identify the format, then replace the entropy-coded scan
+    # data with random bytes so decoding fails with "broken data stream".
+    sos_pos = valid_jpeg.find(b"\xff\xda")
+    assert sos_pos != -1, "Could not find SOS marker in generated JPEG"
+    # SOS: 2-byte marker + 2-byte length field + Ns component entries + 3 bytes
+    sos_end = sos_pos + 2 + 2 + valid_jpeg[sos_pos + 3] * 2 + 3
+    header_bytes = valid_jpeg[:sos_end]
+    corrupt_bytes = header_bytes + _os.urandom(MAX_IMAGE_BYTES + 1 - len(header_bytes))
 
     prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
     tmp = tempfile.mkdtemp()
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
-    corrupt_bytes = b"\x00" * (MAX_IMAGE_BYTES + 1)
     (Path(tmp) / (prefix + filename)).write_bytes(corrupt_bytes)
     context.location = tmp
 
@@ -168,6 +187,22 @@ def step_unsupported_file(context, filename):
     context.temp_dirs.append(tmp)
     context.key_map = {filename: prefix + filename}
     (Path(tmp) / (prefix + filename)).write_bytes(b"not a jpeg")
+    context.location = tmp
+
+
+@given('a local directory with a non-image file named "{filename}"')
+def step_non_image_jpg(context, filename):
+    """Create a file with a .jpg extension but ISO media (video) content.
+
+    Uses the same magic bytes as the Canon CRX video files that were
+    arriving in the photos bucket misnamed as .jpg.
+    """
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
+    tmp = tempfile.mkdtemp()
+    context.temp_dirs.append(tmp)
+    context.key_map = {filename: prefix + filename}
+    # ISO Base Media file format magic bytes (used by MP4, MOV, Canon CRX, etc.)
+    (Path(tmp) / (prefix + filename)).write_bytes(b"\x00\x00\x00\x18ftypcrx " + b"\x00" * 64)
     context.location = tmp
 
 

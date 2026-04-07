@@ -16,7 +16,7 @@ import logging
 import os
 from datetime import datetime
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +184,17 @@ def process_one(
     """
     if not s3_key.lower().endswith((".jpg", ".jpeg")):
         logger.info("Skipping unsupported file type: %s", s3_key)
+        return "unsupported"
+
+    try:
+        Image.open(io.BytesIO(image_bytes))
+    except UnidentifiedImageError:
+        logger.warning("Skipping %s — content is not a recognizable image format", s3_key)
+        with db_conn.cursor() as cur:
+            cur.execute(
+                "UPDATE photos SET last_error = NULL WHERE s3_key = %s AND bucket = %s AND last_error IS NOT NULL",
+                (s3_key, bucket),
+            )
         return "unsupported"
 
     captured_at = _extract_captured_at(image_bytes) if bucket != _DEFAULT_BUCKET else None
