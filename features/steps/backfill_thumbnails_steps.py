@@ -71,10 +71,24 @@ def step_inbox_photo_in_db_and_s3(context):
     s3_key = prefix + images[0].name
     content_hash = hashlib.sha256(images[0].read_bytes()).hexdigest()
 
+    # Track content_hash+bucket BEFORE inserting so after_scenario can clean up
+    # even if seed_photo fails due to a stale row from a previous run.
+    if not hasattr(context, "neon_test_content_hash_buckets"):
+        context.neon_test_content_hash_buckets = []
+    context.neon_test_content_hash_buckets.append((content_hash, inbox_bucket))
+
     boto3.client("s3").upload_file(str(images[0]), inbox_bucket, s3_key)
     context.searcher_s3_uploads.append((inbox_bucket, s3_key))
 
     conn = neon_conn()
+    # Pre-clean any stale row from a prior run (e.g. left by an async processor
+    # Lambda that fired after the previous test's after_scenario cleanup ran).
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM photos WHERE content_hash = %s AND bucket = %s",
+            (content_hash, inbox_bucket),
+        )
+    conn.commit()
     seed_photo(conn, s3_key, [], bucket=inbox_bucket, content_hash=content_hash)
     conn.commit()
     conn.close()

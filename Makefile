@@ -81,7 +81,7 @@ neon-migrate:
 
 test:
 	python -m unittest discover tests/
-	behave
+	time behave
 
 test-local:
 	behave --tags @local

@@ -139,6 +139,22 @@ def after_scenario(context, scenario):
             conn.close()
         except Exception:
             pass
+    # Clean up Neon records by content_hash+bucket (catches stale rows from prior
+    # runs that share a content_hash but have a different s3_key).
+    if hasattr(context, "neon_test_content_hash_buckets"):
+        try:
+            conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+            with conn.cursor() as cur:
+                for ch, bkt in context.neon_test_content_hash_buckets:
+                    cur.execute(
+                        "DELETE FROM photos WHERE content_hash = %s AND bucket = %s",
+                        (ch, bkt),
+                    )
+                cur.execute("DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
 
 def after_all(context):
