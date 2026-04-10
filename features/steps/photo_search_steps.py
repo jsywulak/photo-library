@@ -44,6 +44,12 @@ def step_remove_tag(context, tag, s3_key):
     searcher.remove_tag(s3_key, tag, context.conn)
 
 
+@given('the photo "{s3_key}" is archived')
+def step_archive_photo(context, s3_key):
+    import searcher
+    searcher.archive_photo(s3_key, context.conn)
+
+
 @when('I search for "{tags}"')
 def step_search(context, tags):
     import searcher

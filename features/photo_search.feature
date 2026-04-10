@@ -73,6 +73,13 @@ Feature: Photo search by tags
     When I search for "animal"
     Then the results for "cat.jpg" should not include the tag "cat"
 
+  Scenario: Archived photos are excluded from search results
+    Given the database is empty
+    And a photo "cat.jpg" tagged with "cat, animal"
+    And the photo "cat.jpg" is archived
+    When I search for "cat"
+    Then the results should not contain "cat.jpg"
+
   Scenario: Search results can be paginated with a cursor
     Given the database is empty
     And a photo "photo1.jpg" tagged with "paginationtest"

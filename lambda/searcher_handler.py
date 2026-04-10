@@ -21,7 +21,7 @@ import boto3
 import psycopg2
 from botocore.config import Config
 
-from searcher import add_tags, get_random_tags, remove_tag, search
+from searcher import add_tags, archive_photo, get_random_tags, remove_tag, search
 from utils import get_required_env
 
 logger = logging.getLogger()
@@ -113,6 +113,20 @@ def lambda_handler(event, context):
                 found = remove_tag(s3_key, tag, conn)
                 conn.commit()
                 return _http_response(200, {"removed": found})
+
+        if method == "POST" and path == "/archive":
+            payload = _parse_body(event)
+            if payload is None:
+                return _http_response(400, {"error": "Invalid JSON body"})
+            s3_key = payload.get("s3_key")
+            if not s3_key:
+                return _http_response(400, {"error": "s3_key is required"})
+            with _db() as conn:
+                found = archive_photo(s3_key, conn)
+                if not found:
+                    return _http_response(404, {"error": "Photo not found"})
+                conn.commit()
+                return _http_response(200, {"archived": True})
 
         payload = _parse_body(event)
         if payload is None:

@@ -355,6 +355,18 @@ def step_remove_tag_wrong_key(context):
     context.http_status, _ = _api_post("/remove-tag", {"s3_key": "dummy.jpg", "tag": "cat"}, api_key="wrong-key")
 
 
+@when("the Function URL POST /archive is called for the photo with the correct API key")
+def step_archive_correct_key(context):
+    context.http_status, context.http_body = _api_post(
+        "/archive", {"s3_key": context.last_photo_key}
+    )
+
+
+@when("the Function URL POST /archive is called with an incorrect API key")
+def step_archive_wrong_key(context):
+    context.http_status, _ = _api_post("/archive", {"s3_key": "dummy.jpg"}, api_key="wrong-key")
+
+
 @then('searching for "{tag}" via the Lambda should not return the photo')
 def step_lambda_search_excludes_photo(context, tag):
     client = boto3.client("lambda")

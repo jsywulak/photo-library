@@ -166,3 +166,20 @@ Feature: Frontend UI
     When I click the "Load more" button
     Then I see 6 photos in the grid
     And the "Load more" button is hidden
+
+  Scenario: Lightbox shows an "Archive" button
+    Given the search API returns 1 result
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    Then the lightbox shows an "Archive" button
+
+  Scenario: Clicking "Archive" closes the lightbox and removes the photo from the grid
+    Given the search API returns 1 result
+    And the archive API accepts requests
+    When I open the frontend
+    And I click the "floral" suggestion
+    And I click the first photo
+    And I click the "Archive" button in the lightbox
+    Then the lightbox is hidden
+    And the photo grid is empty

@@ -244,6 +244,25 @@
 
     .lightbox-close:hover { color: #ccc; }
 
+    .lightbox-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+
+    .archive-btn {
+      background: none;
+      border: 1px solid #3a2020;
+      border-radius: 6px;
+      color: #7a3a3a;
+      cursor: pointer;
+      font-size: 0.8125rem;
+      padding: 0.35rem 1rem;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .archive-btn:hover { border-color: #6a2020; color: #c06060; }
+
     #load-more-area {
       padding: 1.5rem 2rem;
       text-align: center;
@@ -289,6 +308,9 @@
     <div class="lightbox-content">
       <img id="lightbox-img" src="" alt="">
       <div id="lightbox-tags" class="lightbox-tags"></div>
+      <div class="lightbox-actions">
+        <button class="archive-btn" id="lightbox-archive">Archive</button>
+      </div>
     </div>
   </div>
 
@@ -309,6 +331,7 @@
     let tags = [];
     let debounceTimer = null;
     let nextCursor = null;
+    let currentS3Key = null;
 
     // ── Chip management ──────────────────────────────────────────────────────
 
@@ -451,6 +474,7 @@
       results.forEach(result => {
         const item = document.createElement('div');
         item.className = 'grid-item';
+        item.dataset.s3Key = result.s3_key;
 
         const img = document.createElement('img');
         img.src = result.thumbnail_url;
@@ -528,6 +552,7 @@
     }
 
     function openLightbox(url, s3Key, tags) {
+      currentS3Key = s3Key;
       lightboxImg.src = url;
       lightboxTags.innerHTML = '';
       (tags || []).forEach(tag => lightboxTags.appendChild(createTagChip(tag, s3Key)));
@@ -545,6 +570,19 @@
     });
 
     document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+
+    document.getElementById('lightbox-archive').addEventListener('click', async () => {
+      const s3Key = currentS3Key;
+      const res = await fetch(`${BASE_URL}/archive`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ s3_key: s3Key }),
+      });
+      if (res.ok) {
+        closeLightbox();
+        document.querySelector(`[data-s3-key="${s3Key}"]`)?.remove();
+      }
+    });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closeLightbox();

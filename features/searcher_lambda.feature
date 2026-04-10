@@ -120,3 +120,15 @@ Feature: Searcher Lambda
     Then the HTTP response status should be 200
     And the response should contain 1 item and no next_cursor
 
+  Scenario: POST /archive hides a photo from search results
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "archive-test"
+    When the Function URL POST /archive is called for the photo with the correct API key
+    Then the HTTP response status should be 200
+    And searching for "archive-test" via the Lambda should not return the photo
+
+  Scenario: POST /archive rejects requests with a wrong API key
+    Given the searcher Lambda is deployed
+    When the Function URL POST /archive is called with an incorrect API key
+    Then the HTTP response status should be 401
+

@@ -114,6 +114,16 @@ def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
     return updated > 0
 
 
+def archive_photo(s3_key: str, db_conn) -> bool:
+    """Set archived_at on a photo. Returns False if not found or already archived."""
+    with db_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND archived_at IS NULL",
+            (s3_key,),
+        )
+        return cur.rowcount > 0
+
+
 def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None,
            limit: int = _SEARCH_PAGE_SIZE, cursor=None) -> dict:
     """Search for photos matching any of the given tags.
@@ -130,6 +140,7 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbna
                 SELECT p.id FROM photos p
                 JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
                 JOIN tags t ON t.id = pt.tag_id
+                WHERE p.archived_at IS NULL
                 GROUP BY p.id
                 HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
             ) AS sub
@@ -147,6 +158,7 @@ def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbna
                 FROM photos p
                 JOIN photo_tags pt ON pt.photo_id = p.id AND pt.removed_at IS NULL
                 JOIN tags t        ON t.id = pt.tag_id
+                WHERE p.archived_at IS NULL
                 GROUP BY p.id, p.s3_key
                 HAVING COUNT(CASE WHEN t.name = ANY(%s) THEN 1 END) > 0
             )

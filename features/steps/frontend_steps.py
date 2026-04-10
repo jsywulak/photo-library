@@ -88,6 +88,16 @@ def step_add_tags_api_error(context):
     context.mock_add_tags_error = True
 
 
+@given("the archive API accepts requests")
+def step_archive_api_accepts(context):
+    pass  # handled unconditionally in the lambda route mock
+
+
+@given("the archive API returns an error")
+def step_archive_api_error(context):
+    context.mock_archive_api_error = True
+
+
 @given("the search API returns {n:d} result")
 @given("the search API returns {n:d} results")
 def step_search_returns_n(context, n):
@@ -196,13 +206,12 @@ def step_open_inbox_infinite_scroll(context):
 
     page.route("**lambda-url**", handle_lambda)
     page.goto(INBOX_HTML.as_uri())
-    page.wait_for_selector("#photo-grid")
+    page.wait_for_selector(".grid-item")
 
 
 @when("I scroll to the bottom of the page")
 def step_scroll_to_bottom(context):
-    context.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-    context.page.wait_for_timeout(600)
+    context.page.locator("#scroll-sentinel").scroll_into_view_if_needed()
 
 
 @when("I open the frontend")
@@ -231,6 +240,13 @@ def step_open_frontend(context):
             else:
                 route.fulfill(status=200, content_type="application/json",
                               body=json.dumps({"added": 1}))
+        elif "/archive" in request.url:
+            if getattr(context, "mock_archive_api_error", False):
+                route.fulfill(status=500, content_type="application/json",
+                              body=json.dumps({"error": "Internal Server Error"}))
+            else:
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"archived": True}))
         else:
             body = json.loads(request.post_data or "{}")
             if body.get("cursor") and getattr(context, "mock_search_second_page", None) is not None:
