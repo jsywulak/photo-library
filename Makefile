@@ -76,14 +76,14 @@ local-db-stop:
 local-migrate:
 	python db/migrate.py
 
-neon-migrate:
+neon-migrate: neon-backup
 	python db/migrate.py "$(NEON_DATABASE_URL)"
 
-test:
+test: local-migrate
 	python -m unittest discover tests/
 	time behave
 
-test-local:
+test-local: local-migrate
 	behave --tags @local
 
 test-unit:
