@@ -17,6 +17,7 @@ import os
 from datetime import datetime
 
 from PIL import Image, UnidentifiedImageError
+from psycopg2.extras import Json
 
 logger = logging.getLogger(__name__)
 
@@ -152,18 +153,47 @@ def _extract_captured_at(image_bytes: bytes) -> datetime | None:
     return None
 
 
+def record_event(
+    cur,
+    s3_key: str,
+    bucket: str,
+    event_type: str,
+    actor: str,
+    photo_id: int | None = None,
+    details: dict | None = None,
+) -> None:
+    """Append a row to the photo_events audit log using the caller's cursor.
+
+    Caller owns the transaction. For failure-path events whose outer transaction
+    has been poisoned, use record_error() instead — it rolls back, writes the
+    event, and commits in a fresh transaction.
+    """
+    cur.execute(
+        "INSERT INTO photo_events (photo_id, s3_key, bucket, event_type, actor, details)"
+        " VALUES (%s, %s, %s, %s, %s, %s)",
+        (photo_id, s3_key, bucket, event_type, actor, Json(details) if details else None),
+    )
+
+
 def record_error(conn, s3_key: str, error: Exception, bucket: str = _DEFAULT_BUCKET) -> None:
-    """Best-effort write of a processing error to photos.last_error.
+    """Best-effort write of a processing error to photos.last_error and a tag_failed event.
 
     Never raises — callers use this inside an except block and must not have
-    the original exception masked by a secondary failure.
+    the original exception masked by a secondary failure. Caller must conn.rollback()
+    first; this function opens a fresh transaction and commits.
     """
     try:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO photos (s3_key, bucket, last_error) VALUES (%s, %s, %s) "
-                "ON CONFLICT (s3_key, bucket) DO UPDATE SET last_error = EXCLUDED.last_error",
+                "ON CONFLICT (s3_key, bucket) DO UPDATE SET last_error = EXCLUDED.last_error "
+                "RETURNING id",
                 (s3_key, bucket, str(error)),
+            )
+            photo_id = cur.fetchone()[0]
+            record_event(
+                cur, s3_key, bucket, "tag_failed", "processor",
+                photo_id=photo_id, details={"error": str(error)},
             )
         conn.commit()
     except Exception:
@@ -250,12 +280,17 @@ def process_one(
             photo_id = row[0]
 
         if bucket == _DEFAULT_BUCKET:
+            record_event(cur, s3_key, bucket, "tagging_started", "processor", photo_id=photo_id)
             try:
                 image_bytes = _prepare_image(image_bytes)
                 _tag_photo(cur, anthropic_client, photo_id, s3_key, image_bytes)
             except Exception:
                 logger.exception("Failed to process image: %s", s3_key)
                 raise
+            record_event(
+                cur, s3_key, bucket, "tagged", "processor",
+                photo_id=photo_id, details={"model": _get_model()},
+            )
 
     return "processed"
 

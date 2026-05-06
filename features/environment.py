@@ -71,6 +71,17 @@ def after_scenario(context, scenario):
     if hasattr(context, "conn"):
         # Roll back any DB writes made during the scenario so each test starts clean.
         context.conn.rollback()
+        # record_error() opens its own commit, bypassing rollback isolation. Sweep
+        # any test-prefixed rows so they don't accumulate in the local DB across runs.
+        try:
+            with context.conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM photos WHERE s3_key LIKE %s",
+                    (TEST_S3_PREFIX + "%",),
+                )
+            context.conn.commit()
+        except Exception:
+            context.conn.rollback()
         context.conn.close()
     for d in context.temp_dirs:
         shutil.rmtree(d, ignore_errors=True)

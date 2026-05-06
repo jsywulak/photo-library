@@ -254,6 +254,10 @@ def step_run_expecting_failure(context):
             processor.process_one(filename, image_bytes, context.conn, anthropic.Anthropic())
         except Exception as e:
             context.processing_error = e
+            # Mirror handler.py: rollback the poisoned transaction, then write the
+            # last_error + tag_failed event via record_error's own commit.
+            context.conn.rollback()
+            processor.record_error(context.conn, filename, e)
         else:
             context.processing_error = None
     finally:
