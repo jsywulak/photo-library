@@ -24,6 +24,11 @@ Parameters:
     Default: photo-tagging-thumbnails
     Description: Name of the public S3 bucket for thumbnails
 
+  NeonDatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: Neon PostgreSQL connection string for writing photo_events
+
 Resources:
   ThumbnailsBucket:
     Type: AWS::S3::Bucket
@@ -94,6 +99,7 @@ Resources:
         Variables:
           SOURCE_BUCKET: !Ref PhotosBucket
           THUMBNAIL_BUCKET: !Ref ThumbnailBucketName
+          NEON_DATABASE_URL: !Ref NeonDatabaseUrl
 
   ThumbnailerEventBridgeRule:
     Type: AWS::Events::Rule

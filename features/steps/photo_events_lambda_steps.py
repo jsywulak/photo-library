@@ -60,3 +60,13 @@ def step_neon_event_seeded_with_tag(context, event_type, actor, tag):
         f"No photo_events row with event_type={event_type!r}, actor={actor!r}, "
         f"details.tag={tag!r} found in Neon for {s3_key!r}"
     )
+
+
+@then('a photo_events row with event_type "{event_type}" and actor "{actor}" should exist in Neon for the inbox key')
+@then('a photo_events row with event_type "{event_type}" and actor "{actor}" should exist in Neon for the photo')
+def step_neon_event_test_s3_key(context, event_type, actor):
+    s3_key = context.test_s3_key
+    row = _select_event(s3_key, event_type, actor=actor)
+    assert row is not None, (
+        f"No photo_events row with event_type={event_type!r}, actor={actor!r} found in Neon for {s3_key!r}"
+    )

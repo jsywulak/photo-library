@@ -96,6 +96,9 @@ def after_scenario(context, scenario):
         try:
             conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
             with conn.cursor() as cur:
+                # Drop photo_events first; cascade only handles rows whose photo_id
+                # references a photos row, leaving photo_id=NULL events orphaned.
+                cur.execute("DELETE FROM photo_events WHERE s3_key = %s", (context.test_s3_key,))
                 cur.execute(
                     "DELETE FROM photos WHERE s3_key = %s AND bucket = %s",
                     (context.test_s3_key, context.test_s3_bucket),
@@ -141,6 +144,10 @@ def after_scenario(context, scenario):
         try:
             conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
             with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM photo_events WHERE s3_key = ANY(%s)",
+                    (context.neon_test_s3_keys,),
+                )
                 cur.execute(
                     "DELETE FROM photos WHERE s3_key = ANY(%s)",
                     (context.neon_test_s3_keys,),

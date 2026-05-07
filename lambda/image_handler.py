@@ -15,14 +15,16 @@ Environment variables required:
 
 import hashlib
 import logging
+import os
 import urllib.parse
 from pathlib import Path
 
 import boto3
+import psycopg2
 from botocore.exceptions import ClientError
 
 from thumbnailer import generate_thumbnail
-from utils import get_required_env
+from utils import get_required_env, record_event
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -30,6 +32,30 @@ logger.setLevel(logging.INFO)
 _UPLOAD_BUCKET = get_required_env("UPLOAD_BUCKET")
 _INBOX_BUCKET = get_required_env("INBOX_BUCKET")
 _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
+_DB_URL = os.environ.get("NEON_DATABASE_URL")
+
+
+def _emit_received_event(s3_key: str, content_hash: str, original_filename: str) -> None:
+    """Best-effort write of a 'received' event. Never raises — observability must
+    not break the upload path if Neon is briefly unreachable.
+    """
+    if not _DB_URL:
+        logger.warning("NEON_DATABASE_URL not set; skipping photo_events write")
+        return
+    try:
+        conn = psycopg2.connect(_DB_URL, connect_timeout=5)
+        try:
+            with conn.cursor() as cur:
+                record_event(
+                    cur, s3_key, _INBOX_BUCKET, "received", "image_handler",
+                    photo_id=None,
+                    details={"content_hash": content_hash, "original_filename": original_filename},
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("Failed to write 'received' photo_events row for %s", s3_key)
 
 
 def _extract_s3_key(event):
@@ -86,6 +112,8 @@ def lambda_handler(event, context):
 
     s3.delete_object(Bucket=source_bucket, Key=s3_key)
     logger.info("Deleted original s3://%s/%s", source_bucket, s3_key)
+
+    _emit_received_event(dest_key, content_hash, original_filename)
 
     return {
         "status": "processed",
