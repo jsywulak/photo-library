@@ -15,7 +15,7 @@ Returns a paginated envelope:
 import base64
 import json
 
-from utils import thumbnail_key as _thumbnail_key
+from utils import record_event, thumbnail_key as _thumbnail_key
 
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _DEFAULT_TAG_COUNT = 20
@@ -63,11 +63,11 @@ def add_tags(s3_key: str, tags: list[str], db_conn) -> int | None:
         return 0
 
     with db_conn.cursor() as cur:
-        cur.execute("SELECT id FROM photos WHERE s3_key = %s", (s3_key,))
+        cur.execute("SELECT id, bucket FROM photos WHERE s3_key = %s", (s3_key,))
         row = cur.fetchone()
         if not row:
             return None
-        photo_id = row[0]
+        photo_id, bucket = row
 
         count = 0
         for tag_name in normalised:
@@ -89,6 +89,10 @@ def add_tags(s3_key: str, tags: list[str], db_conn) -> int | None:
                 (photo_id, tag_id),
             )
             count += cur.rowcount
+            record_event(
+                cur, s3_key, bucket, "tag_added", "searcher",
+                photo_id=photo_id, details={"tag": tag_name},
+            )
 
     return count
 
@@ -107,21 +111,35 @@ def remove_tag(s3_key: str, tag: str, db_conn) -> bool:
               AND p.s3_key = %s
               AND t.name = %s
               AND pt.removed_at IS NULL
+            RETURNING p.id, p.bucket
             """,
             (s3_key, normalised),
         )
-        updated = cur.rowcount
-    return updated > 0
+        rows = cur.fetchall()
+        if not rows:
+            return False
+        photo_id, bucket = rows[0]
+        record_event(
+            cur, s3_key, bucket, "tag_removed", "searcher",
+            photo_id=photo_id, details={"tag": normalised},
+        )
+    return True
 
 
 def archive_photo(s3_key: str, db_conn) -> bool:
     """Set archived_at on a photo. Returns False if not found or already archived."""
     with db_conn.cursor() as cur:
         cur.execute(
-            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND archived_at IS NULL",
+            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND archived_at IS NULL "
+            "RETURNING id, bucket",
             (s3_key,),
         )
-        return cur.rowcount > 0
+        row = cur.fetchone()
+        if row is None:
+            return False
+        photo_id, bucket = row
+        record_event(cur, s3_key, bucket, "archived", "searcher", photo_id=photo_id)
+    return True
 
 
 def search(tags: list[str], db_conn, s3_client=None, bucket: str = None, thumbnail_bucket: str = None,

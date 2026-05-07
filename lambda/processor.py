@@ -17,7 +17,8 @@ import os
 from datetime import datetime
 
 from PIL import Image, UnidentifiedImageError
-from psycopg2.extras import Json
+
+from utils import record_event
 
 logger = logging.getLogger(__name__)
 
@@ -151,28 +152,6 @@ def _extract_captured_at(image_bytes: bytes) -> datetime | None:
     except Exception as e:
         logger.debug("Could not extract EXIF captured_at: %s", e)
     return None
-
-
-def record_event(
-    cur,
-    s3_key: str,
-    bucket: str,
-    event_type: str,
-    actor: str,
-    photo_id: int | None = None,
-    details: dict | None = None,
-) -> None:
-    """Append a row to the photo_events audit log using the caller's cursor.
-
-    Caller owns the transaction. For failure-path events whose outer transaction
-    has been poisoned, use record_error() instead — it rolls back, writes the
-    event, and commits in a fresh transaction.
-    """
-    cur.execute(
-        "INSERT INTO photo_events (photo_id, s3_key, bucket, event_type, actor, details)"
-        " VALUES (%s, %s, %s, %s, %s, %s)",
-        (photo_id, s3_key, bucket, event_type, actor, Json(details) if details else None),
-    )
 
 
 def record_error(conn, s3_key: str, error: Exception, bucket: str = _DEFAULT_BUCKET) -> None:

@@ -8,6 +8,8 @@ S3 bucket. Photos live in the `photos` table with bucket = INBOX_BUCKET.
 import base64
 import json
 
+from utils import record_event
+
 _PRESIGNED_URL_EXPIRY = 3600  # seconds
 _INBOX_PAGE_SIZE = 50
 
@@ -122,6 +124,14 @@ def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, phot
     s3_client.delete_object(Bucket=inbox_bucket, Key=s3_key)
     with db_conn.cursor() as cur:
         cur.execute("DELETE FROM photos WHERE s3_key = %s AND bucket = %s", (s3_key, inbox_bucket))
+        # photo_id intentionally NULL: the row above was just deleted, and a
+        # FK photo_id would cascade-delete this audit row. Slice 4 will replace
+        # the DELETE+re-INSERT pattern with an in-place UPDATE that preserves id.
+        record_event(
+            cur, s3_key, inbox_bucket, "promoted", "inbox",
+            photo_id=None,
+            details={"content_hash": content_hash, "dest_bucket": photos_bucket, "dest_key": dest_key},
+        )
     return True
 
 
@@ -129,7 +139,12 @@ def archive_inbox_photo(s3_key: str, db_conn, inbox_bucket: str) -> bool:
     """Set archived_at on the inbox photo record. Returns False if not found."""
     with db_conn.cursor() as cur:
         cur.execute(
-            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND bucket = %s",
+            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND bucket = %s "
+            "RETURNING id",
             (s3_key, inbox_bucket),
         )
-        return cur.rowcount > 0
+        row = cur.fetchone()
+        if row is None:
+            return False
+        record_event(cur, s3_key, inbox_bucket, "archived", "inbox", photo_id=row[0])
+    return True
