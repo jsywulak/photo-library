@@ -15,7 +15,7 @@ pip install -r requirements-image-lambda.txt \
   --quiet
 
 echo "Copying Lambda code..."
-cp lambda/image_handler.py lambda/thumbnailer.py lambda/utils.py "$BUILD_DIR"
+cp lambda/image_handler.py lambda/thumbnailer.py lambda/utils.py lambda/exif.py "$BUILD_DIR"
 
 echo "Zipping..."
 (cd "$BUILD_DIR" && zip -qr - . ) > dist/image.zip

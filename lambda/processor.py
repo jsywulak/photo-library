@@ -14,10 +14,10 @@ import io
 import json
 import logging
 import os
-from datetime import datetime
 
 from PIL import Image, UnidentifiedImageError
 
+from exif import extract_captured_at as _extract_captured_at
 from utils import record_event
 
 logger = logging.getLogger(__name__)
@@ -126,32 +126,6 @@ def _build_prompt() -> str:
         '  "tags": a list of 25-30 tags\n'
         "Respond with JSON only, no other text."
     )
-
-
-_EXIF_DATETIME_ORIGINAL = 36867
-_EXIF_DATETIME_FORMAT   = "%Y:%m:%d %H:%M:%S"
-
-
-_EXIF_SUB_IFD = 34665  # Exif Sub-IFD pointer tag
-
-
-def _extract_captured_at(image_bytes: bytes) -> datetime | None:
-    """Return the EXIF DateTimeOriginal as a datetime, or None if absent/unparseable.
-
-    DateTimeOriginal lives in the Exif Sub-IFD (tag 34665), not the main IFD,
-    so we must call getexif().get_ifd(34665) to reach it.
-    """
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        exif = img.getexif()
-        # DateTimeOriginal is in the Exif Sub-IFD on real camera files;
-        # fall back to the main IFD for files that embed it there directly.
-        raw = exif.get_ifd(_EXIF_SUB_IFD).get(_EXIF_DATETIME_ORIGINAL) or exif.get(_EXIF_DATETIME_ORIGINAL)
-        if raw:
-            return datetime.strptime(raw, _EXIF_DATETIME_FORMAT)
-    except Exception as e:
-        logger.debug("Could not extract EXIF captured_at: %s", e)
-    return None
 
 
 def record_error(conn, s3_key: str, error: Exception, bucket: str = _DEFAULT_BUCKET) -> None:

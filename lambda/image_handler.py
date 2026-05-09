@@ -23,6 +23,7 @@ import boto3
 import psycopg2
 from botocore.exceptions import ClientError
 
+from exif import extract_captured_at
 from thumbnailer import generate_thumbnail
 from utils import get_required_env, record_event
 
@@ -35,27 +36,52 @@ _THUMBNAIL_BUCKET = get_required_env("THUMBNAIL_BUCKET")
 _DB_URL = os.environ.get("NEON_DATABASE_URL")
 
 
-def _emit_received_event(s3_key: str, content_hash: str, original_filename: str) -> None:
-    """Best-effort write of a 'received' event. Never raises — observability must
-    not break the upload path if Neon is briefly unreachable.
+def _record_inbox_photo(
+    s3_key: str,
+    content_hash: str,
+    original_filename: str,
+    captured_at,
+) -> None:
+    """Insert the inbox photos row and emit the 'received' event in one transaction.
+
+    Best-effort — never raises. A Neon outage must not break the upload path;
+    if this fails, processor v2's EventBridge handler will INSERT the row when
+    the inbox object triggers it (its existing ON CONFLICT DO NOTHING tolerates
+    that race).
     """
     if not _DB_URL:
-        logger.warning("NEON_DATABASE_URL not set; skipping photo_events write")
+        logger.warning("NEON_DATABASE_URL not set; skipping inbox row + photo_events write")
         return
     try:
         conn = psycopg2.connect(_DB_URL, connect_timeout=5)
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename)"
+                    " VALUES (%s, %s, %s, %s, %s)"
+                    " ON CONFLICT DO NOTHING RETURNING id",
+                    (s3_key, _INBOX_BUCKET, captured_at, content_hash, original_filename),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    photo_id = row[0]
+                else:
+                    cur.execute(
+                        "SELECT id FROM photos WHERE s3_key = %s AND bucket = %s",
+                        (s3_key, _INBOX_BUCKET),
+                    )
+                    existing = cur.fetchone()
+                    photo_id = existing[0] if existing else None
                 record_event(
                     cur, s3_key, _INBOX_BUCKET, "received", "image_handler",
-                    photo_id=None,
+                    photo_id=photo_id,
                     details={"content_hash": content_hash, "original_filename": original_filename},
                 )
             conn.commit()
         finally:
             conn.close()
     except Exception:
-        logger.exception("Failed to write 'received' photo_events row for %s", s3_key)
+        logger.exception("Failed to write inbox photos row + received event for %s", s3_key)
 
 
 def _extract_s3_key(event):
@@ -94,6 +120,8 @@ def lambda_handler(event, context):
     content_hash = hashlib.sha256(image_bytes).hexdigest()
     logger.info("content_hash=%s for s3://%s/%s", content_hash, source_bucket, s3_key)
 
+    captured_at = extract_captured_at(image_bytes)
+
     thumb_status = generate_thumbnail(
         s3_key, source_bucket, _THUMBNAIL_BUCKET, s3, content_hash=content_hash
     )
@@ -113,7 +141,7 @@ def lambda_handler(event, context):
     s3.delete_object(Bucket=source_bucket, Key=s3_key)
     logger.info("Deleted original s3://%s/%s", source_bucket, s3_key)
 
-    _emit_received_event(dest_key, content_hash, original_filename)
+    _record_inbox_photo(dest_key, content_hash, original_filename, captured_at)
 
     return {
         "status": "processed",

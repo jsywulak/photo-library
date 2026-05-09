@@ -38,3 +38,20 @@ Feature: Image Handler Lambda
     And a test photo is uploaded to the upload bucket
     When the image handler Lambda processes the photo
     Then the inbox thumbnail should have source-hash metadata matching the photo's SHA-256
+
+  Scenario: Image handler writes a photos row to Neon when a photo is received
+    Given the image handler Lambda is deployed
+    And a test JPEG with EXIF DateTimeOriginal "2024:06:15 12:00:00" is uploaded to the upload bucket
+    When the image handler Lambda processes the photo
+    Then a photos row should exist in Neon for the inbox key with bucket "photo-tagging-inbox"
+    And the photos row content_hash should match the uploaded SHA-256
+    And the photos row captured_at should be "2024-06-15 12:00:00"
+    And the photos row original_filename should match the upload key
+
+  Scenario: Image handler is idempotent when the same content arrives twice
+    Given the image handler Lambda is deployed
+    And a test photo is uploaded to the upload bucket
+    And the image handler Lambda processes the photo
+    When the same photo content is uploaded to the upload bucket under a different key
+    And the image handler Lambda processes the new upload
+    Then exactly one photos row should exist in Neon for the content_hash with bucket "photo-tagging-inbox"

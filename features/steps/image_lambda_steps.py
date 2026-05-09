@@ -58,11 +58,73 @@ def step_upload_test_photo_to_upload_bucket(context):
     context.test_upload_bucket = upload_bucket
     context.test_expected_content_hash = content_hash
     context.test_expected_source_hash = content_hash
+    context.test_image_bytes = image_bytes
     # After the handler runs, the inbox key and thumbnail key are hash-based
     context.test_s3_key = f"{content_hash}.jpg"
     context.test_s3_bucket = os.environ["INBOX_BUCKET"]
+    context.test_content_hash = content_hash
     context.test_thumbnail_key = f"thumbnails/{content_hash}.webp"
     context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+
+
+@given('a test JPEG with EXIF DateTimeOriginal "{exif_datetime}" is uploaded to the upload bucket')
+def step_upload_jpeg_with_exif(context, exif_datetime):
+    """Synthesize a JPEG carrying a DateTimeOriginal EXIF tag and upload it."""
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color=(80, 80, 80))
+    exif = img.getexif()
+    exif[36867] = exif_datetime  # DateTimeOriginal
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif.tobytes())
+    image_bytes = buf.getvalue()
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    upload_bucket = os.environ["UPLOAD_BUCKET"]
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
+    s3_key = prefix + "exif.jpg"
+
+    boto3.client("s3").put_object(
+        Bucket=upload_bucket, Key=s3_key, Body=image_bytes, ContentType="image/jpeg",
+    )
+
+    context.test_upload_s3_key = s3_key
+    context.test_upload_bucket = upload_bucket
+    context.test_expected_content_hash = content_hash
+    context.test_expected_source_hash = content_hash
+    context.test_image_bytes = image_bytes
+    context.test_s3_key = f"{content_hash}.jpg"
+    context.test_s3_bucket = os.environ["INBOX_BUCKET"]
+    context.test_content_hash = content_hash
+    context.test_thumbnail_key = f"thumbnails/{content_hash}.webp"
+    context.test_thumbnail_bucket = os.environ["THUMBNAIL_BUCKET"]
+
+
+@given("the image handler Lambda processes the photo")
+def step_invoke_image_handler_given(context):
+    step_invoke_image_handler(context)
+
+
+@when("the same photo content is uploaded to the upload bucket under a different key")
+def step_upload_same_content_different_key(context):
+    """Re-upload the same image bytes from the previous step under a fresh key."""
+    upload_bucket = os.environ["UPLOAD_BUCKET"]
+    new_key = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-dup.jpg"
+
+    boto3.client("s3").put_object(
+        Bucket=upload_bucket, Key=new_key, Body=context.test_image_bytes, ContentType="image/jpeg",
+    )
+
+    if not hasattr(context, "extra_upload_keys"):
+        context.extra_upload_keys = []
+    context.extra_upload_keys.append(new_key)
+    context.test_upload_s3_key = new_key  # invoke step uses this
+
+
+@when("the image handler Lambda processes the new upload")
+def step_invoke_image_handler_again(context):
+    step_invoke_image_handler(context)
 
 
 @when("the image handler Lambda processes the photo")
@@ -167,4 +229,74 @@ def step_image_handler_thumbnail_has_source_hash(context):
     assert metadata["source-hash"] == context.test_expected_source_hash, (
         f"Expected source-hash {context.test_expected_source_hash!r}, "
         f"got {metadata['source-hash']!r}"
+    )
+
+
+def _fetch_inbox_photos_row(context):
+    import psycopg2
+    conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, content_hash, captured_at, original_filename, bucket"
+                " FROM photos WHERE s3_key = %s AND bucket = %s",
+                (context.test_s3_key, context.test_s3_bucket),
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+@then('a photos row should exist in Neon for the inbox key with bucket "{bucket}"')
+def step_photos_row_in_neon(context, bucket):
+    row = _fetch_inbox_photos_row(context)
+    assert row is not None, (
+        f"No photos row found in Neon for s3_key={context.test_s3_key!r}, bucket={bucket!r}"
+    )
+    assert row[4] == bucket, f"Expected bucket {bucket!r}, got {row[4]!r}"
+    context.fetched_photos_row = row
+
+
+@then("the photos row content_hash should match the uploaded SHA-256")
+def step_photos_row_content_hash(context):
+    row = context.fetched_photos_row
+    assert row[1] == context.test_expected_content_hash, (
+        f"Expected content_hash {context.test_expected_content_hash!r}, got {row[1]!r}"
+    )
+
+
+@then('the photos row captured_at should be "{expected}"')
+def step_photos_row_captured_at(context, expected):
+    row = context.fetched_photos_row
+    actual = row[2]
+    assert actual is not None, "captured_at is NULL — image_handler did not extract EXIF"
+    actual_str = actual.strftime("%Y-%m-%d %H:%M:%S")
+    assert actual_str == expected, f"Expected captured_at {expected!r}, got {actual_str!r}"
+
+
+@then("the photos row original_filename should match the upload key")
+def step_photos_row_original_filename(context):
+    row = context.fetched_photos_row
+    expected = Path(context.test_upload_s3_key).name
+    assert row[3] == expected, (
+        f"Expected original_filename {expected!r}, got {row[3]!r}"
+    )
+
+
+@then('exactly one photos row should exist in Neon for the content_hash with bucket "{bucket}"')
+def step_one_photos_row_for_content_hash(context, bucket):
+    import psycopg2
+    conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM photos WHERE content_hash = %s AND bucket = %s",
+                (context.test_expected_content_hash, bucket),
+            )
+            count = cur.fetchone()[0]
+    finally:
+        conn.close()
+    assert count == 1, (
+        f"Expected exactly 1 photos row for content_hash={context.test_expected_content_hash!r}, "
+        f"bucket={bucket!r}, got {count}"
     )
