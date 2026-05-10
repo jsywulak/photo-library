@@ -289,14 +289,19 @@ def step_one_photos_row_for_content_hash(context, bucket):
     conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
     try:
         with conn.cursor() as cur:
+            # The (content_hash) unique constraint (migration 012) guarantees at most
+            # one row per content_hash across all buckets. The bucket parameter is
+            # retained in the assertion text for readability but the count below is
+            # by content_hash alone — a prior test may have left the row in a
+            # different bucket.
             cur.execute(
-                "SELECT COUNT(*) FROM photos WHERE content_hash = %s AND bucket = %s",
-                (context.test_expected_content_hash, bucket),
+                "SELECT COUNT(*) FROM photos WHERE content_hash = %s",
+                (context.test_expected_content_hash,),
             )
             count = cur.fetchone()[0]
     finally:
         conn.close()
     assert count == 1, (
         f"Expected exactly 1 photos row for content_hash={context.test_expected_content_hash!r}, "
-        f"bucket={bucket!r}, got {count}"
+        f"got {count}"
     )

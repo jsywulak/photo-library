@@ -68,8 +68,8 @@ def _upload_inbox_photo(filename: str, context) -> tuple[str, str]:
         cur.execute(
             "INSERT INTO photos (s3_key, bucket, content_hash, captured_at)"
             " VALUES (%s, %s, %s, '1970-01-01 00:00:00+00')"
-            " ON CONFLICT (content_hash, bucket)"
-            " DO UPDATE SET s3_key = EXCLUDED.s3_key, captured_at = EXCLUDED.captured_at",
+            " ON CONFLICT (content_hash)"
+            " DO UPDATE SET s3_key = EXCLUDED.s3_key, bucket = EXCLUDED.bucket, captured_at = EXCLUDED.captured_at",
             (s3_key, bucket, content_hash),
         )
     conn.commit()

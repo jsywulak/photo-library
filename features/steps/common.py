@@ -30,8 +30,14 @@ def seed_photo(conn, s3_key, tags, bucket="photo-tagging-photos", content_hash=N
         The inserted photo id.
     """
     with conn.cursor() as cur:
+        # ON CONFLICT (content_hash) DO UPDATE handles re-runs after migration 012:
+        # the same content_hash now uniquely identifies a row regardless of bucket,
+        # so re-seeding moves the existing row to the new s3_key/bucket.
         cur.execute(
-            "INSERT INTO photos (s3_key, bucket, processed_at, content_hash) VALUES (%s, %s, NOW(), %s) RETURNING id",
+            "INSERT INTO photos (s3_key, bucket, processed_at, content_hash)"
+            " VALUES (%s, %s, NOW(), %s)"
+            " ON CONFLICT (content_hash) DO UPDATE SET s3_key = EXCLUDED.s3_key, bucket = EXCLUDED.bucket, processed_at = EXCLUDED.processed_at"
+            " RETURNING id",
             (s3_key, bucket, content_hash),
         )
         photo_id = cur.fetchone()[0]

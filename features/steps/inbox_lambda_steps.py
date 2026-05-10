@@ -91,6 +91,7 @@ def step_upload_to_inbox_with_db_v2(context):
     s3_key = f"{prefix}photo.jpg"
     bucket = os.environ["INBOX_BUCKET"]
     content_hash = hashlib.sha256(_MINIMAL_JPEG).hexdigest()
+    dest_key = f"{content_hash}.jpg"  # the eventual photos-bucket key after promotion
 
     boto3.client("s3").put_object(
         Bucket=bucket, Key=s3_key, Body=_MINIMAL_JPEG, ContentType="image/jpeg"
@@ -99,17 +100,194 @@ def step_upload_to_inbox_with_db_v2(context):
 
     conn = neon_conn()
     with conn.cursor() as cur:
+        # Defensive sweep: a late-arriving processor v2 invocation from a prior test
+        # may have created a 'failed' row at dest_key with content_hash=NULL (escaping
+        # the (content_hash) unique constraint). Clear it so the promotion UPDATE in
+        # this scenario doesn't collide on (s3_key, bucket).
+        cur.execute("DELETE FROM photos WHERE s3_key = %s", (dest_key,))
         cur.execute(
             "INSERT INTO photos (s3_key, bucket, captured_at, content_hash) VALUES (%s, %s, '1970-01-01 00:00:00+00', %s)"
-            " ON CONFLICT (content_hash, bucket) DO UPDATE SET s3_key = EXCLUDED.s3_key, captured_at = EXCLUDED.captured_at",
+            " ON CONFLICT (content_hash) DO UPDATE SET s3_key = EXCLUDED.s3_key, bucket = EXCLUDED.bucket, captured_at = EXCLUDED.captured_at"
+            " RETURNING id",
             (s3_key, bucket, content_hash),
         )
+        photo_id = cur.fetchone()[0]
     conn.commit()
     conn.close()
 
     context.neon_test_s3_keys.append(s3_key)
+    # Promotion renames s3_key to {hash}.jpg in the photos bucket; track for cleanup.
+    context.neon_test_s3_keys.append(f"{content_hash}.jpg")
+    # Also clean by content_hash to catch the photos-bucket row a delayed processor v2
+    # EventBridge invocation may re-insert AFTER the s3_key cleanup runs.
+    if not hasattr(context, "neon_test_content_hash_buckets"):
+        context.neon_test_content_hash_buckets = []
+    context.neon_test_content_hash_buckets.append((content_hash, os.environ["INBOX_BUCKET"]))
+    context.neon_test_content_hash_buckets.append((content_hash, os.environ["S3_BUCKET"]))
     context.inbox_s3_key = s3_key
     context.inbox_content_hash = content_hash
+    context.inbox_photo_id = photo_id
+
+
+@given('a photo with captured_at "{captured_at}", original_filename "{original_filename}", and a known content_hash exists in the inbox')
+def step_inbox_photo_with_metadata(context, captured_at, original_filename):
+    """Upload a unique JPEG to the inbox bucket and INSERT a photos row with the
+    given metadata. Used by Slice 4 promotion-history scenarios."""
+    import io
+    from PIL import Image
+
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+
+    # Synthesize a unique JPEG so the content_hash is fresh and the test is hermetic.
+    img = Image.new("RGB", (8, 8), color=(uuid.uuid4().int & 0xFF, 50, 50))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    image_bytes = buf.getvalue()
+    content_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    bucket = os.environ["INBOX_BUCKET"]
+    prefix = f"testA6FA7E1D-{uuid.uuid4().hex[:8]}-"
+    s3_key = f"{prefix}{original_filename}"
+    dest_key = f"{content_hash}.jpg"
+
+    boto3.client("s3").put_object(
+        Bucket=bucket, Key=s3_key, Body=image_bytes, ContentType="image/jpeg",
+    )
+    context.searcher_s3_uploads.append((bucket, s3_key))
+
+    conn = neon_conn()
+    with conn.cursor() as cur:
+        # Defensive sweep — same rationale as step_upload_to_inbox_with_db_v2.
+        cur.execute("DELETE FROM photos WHERE s3_key = %s", (dest_key,))
+        cur.execute(
+            "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename)"
+            " VALUES (%s, %s, %s, %s, %s)"
+            " RETURNING id",
+            (s3_key, bucket, captured_at, content_hash, original_filename),
+        )
+        photo_id = cur.fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    context.neon_test_s3_keys.append(s3_key)
+    context.neon_test_s3_keys.append(f"{content_hash}.jpg")
+    if not hasattr(context, "neon_test_content_hash_buckets"):
+        context.neon_test_content_hash_buckets = []
+    context.neon_test_content_hash_buckets.append((content_hash, os.environ["INBOX_BUCKET"]))
+    context.neon_test_content_hash_buckets.append((content_hash, os.environ["S3_BUCKET"]))
+    context.inbox_s3_key = s3_key
+    context.inbox_content_hash = content_hash
+    context.inbox_photo_id = photo_id
+    context.inbox_captured_at = captured_at
+    context.inbox_original_filename = original_filename
+
+
+@given('a "received" photo_events row exists for the inbox photo')
+def step_seed_received_event(context):
+    conn = neon_conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO photo_events (photo_id, s3_key, bucket, event_type, actor)"
+            " VALUES (%s, %s, %s, 'received', 'image_handler')",
+            (context.inbox_photo_id, context.inbox_s3_key, os.environ["INBOX_BUCKET"]),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _fetch_photos_row_by_content_hash(content_hash):
+    conn = neon_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, bucket, s3_key, captured_at, content_hash, original_filename"
+                " FROM photos WHERE content_hash = %s ORDER BY id DESC LIMIT 1",
+                (content_hash,),
+            )
+            return cur.fetchone()
+    finally:
+        conn.close()
+
+
+@then("the photos row id should be preserved across promotion")
+def step_photo_id_preserved(context):
+    row = _fetch_photos_row_by_content_hash(context.inbox_content_hash)
+    assert row is not None, f"No photos row for content_hash={context.inbox_content_hash!r}"
+    assert row[0] == context.inbox_photo_id, (
+        f"Expected photos.id {context.inbox_photo_id} preserved, got {row[0]} (DELETE+re-INSERT)"
+    )
+
+
+@then('the photos row bucket should now be "{bucket}"')
+def step_photo_bucket_now(context, bucket):
+    row = _fetch_photos_row_by_content_hash(context.inbox_content_hash)
+    assert row is not None, "photos row not found by content_hash"
+    assert row[1] == bucket, f"Expected bucket {bucket!r}, got {row[1]!r}"
+
+
+@then('the photos row captured_at should still be "{expected}"')
+def step_photo_captured_at_preserved(context, expected):
+    row = _fetch_photos_row_by_content_hash(context.inbox_content_hash)
+    assert row is not None, "photos row not found"
+    actual = row[3].strftime("%Y-%m-%d %H:%M:%S")
+    assert actual == expected, f"Expected captured_at {expected!r}, got {actual!r}"
+
+
+@then('the photos row original_filename should still be "{expected}"')
+def step_photo_original_filename_preserved(context, expected):
+    row = _fetch_photos_row_by_content_hash(context.inbox_content_hash)
+    assert row is not None, "photos row not found"
+    assert row[5] == expected, f"Expected original_filename {expected!r}, got {row[5]!r}"
+
+
+@then("the photos row content_hash should still be the original")
+def step_photo_content_hash_preserved(context):
+    row = _fetch_photos_row_by_content_hash(context.inbox_content_hash)
+    assert row is not None, "photos row not found"
+    assert row[4] == context.inbox_content_hash, (
+        f"Expected content_hash {context.inbox_content_hash!r}, got {row[4]!r}"
+    )
+
+
+@then('the prior "received" photo_events row should still reference the same photo_id')
+def step_received_event_preserved(context):
+    conn = neon_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT photo_id FROM photo_events"
+                " WHERE event_type = 'received' AND s3_key = %s",
+                (context.inbox_s3_key,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, f"'received' event for {context.inbox_s3_key!r} was lost (cascade-deleted by DELETE+re-INSERT)"
+    assert row[0] == context.inbox_photo_id, (
+        f"Expected received event photo_id {context.inbox_photo_id}, got {row[0]}"
+    )
+
+
+@then('a "promoted" photo_events row should exist for the same photo_id')
+def step_promoted_event_for_photo_id(context):
+    conn = neon_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM photo_events"
+                " WHERE event_type = 'promoted' AND photo_id = %s",
+                (context.inbox_photo_id,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, (
+        f"No 'promoted' event found with photo_id={context.inbox_photo_id} "
+        f"(today inbox.py writes the event with photo_id=NULL because the row is being deleted)"
+    )
 
 
 @when("the inbox Function URL GET /inbox is called with the correct API key")

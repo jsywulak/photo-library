@@ -201,7 +201,7 @@ def process_one(
 
     with db_conn.cursor() as cur:
         # Atomically claim the row. ON CONFLICT DO NOTHING suppresses conflicts on
-        # both (s3_key, bucket) and (content_hash, bucket) unique constraints.
+        # both (s3_key, bucket) and (content_hash) unique constraints.
         cur.execute(
             "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename)"
             " VALUES (%s, %s, %s, %s, %s)"
@@ -210,14 +210,14 @@ def process_one(
         )
         row = cur.fetchone()
         if row is None:
-            # No row returned — conflict on (s3_key, bucket) or (content_hash, bucket).
+            # No row returned — conflict on (s3_key, bucket) or (content_hash).
             cur.execute(
                 "SELECT id, processed_at FROM photos WHERE s3_key = %s AND bucket = %s",
                 (s3_key, bucket),
             )
             existing = cur.fetchone()
             if existing is None:
-                # content_hash+bucket conflict with a different s3_key — duplicate content
+                # content_hash conflict with a different s3_key — duplicate content
                 # arrived concurrently; the other invocation will handle it.
                 logger.info("Duplicate content conflict for %s (hash %s), skipping", s3_key, content_hash[:8])
                 return "skipped"

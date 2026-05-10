@@ -99,11 +99,12 @@ def list_inbox(db_conn, s3_client, inbox_bucket: str, thumbnail_bucket: str,
 
 
 def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, photos_bucket: str) -> bool:
-    """Copy photo from inbox to photos bucket using content hash as the destination key.
+    """Promote a photo from the inbox bucket to the photos bucket in place.
 
-    The content_hash stored on the inbox record becomes the permanent S3 key
-    in the photos bucket ({hash}.jpg), giving collision-free identity regardless
-    of original filename. Returns False if the photo was not found in the DB.
+    UPDATEs the photos row's bucket and s3_key (rather than DELETE+let-processor-INSERT),
+    preserving the row's id, captured_at, original_filename, and prior photo_events.
+    The dest key is {content_hash}.jpg so the photos bucket has a stable hash-based
+    identity. Returns False if the photo was not found in the DB.
     """
     with db_conn.cursor() as cur:
         cur.execute(
@@ -113,7 +114,7 @@ def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, phot
         row = cur.fetchone()
         if not row:
             return False
-        content_hash = row[1]
+        photo_id, content_hash = row
 
     dest_key = f"{content_hash}.jpg"
     s3_client.copy_object(
@@ -123,14 +124,16 @@ def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, phot
     )
     s3_client.delete_object(Bucket=inbox_bucket, Key=s3_key)
     with db_conn.cursor() as cur:
-        cur.execute("DELETE FROM photos WHERE s3_key = %s AND bucket = %s", (s3_key, inbox_bucket))
-        # photo_id intentionally NULL: the row above was just deleted, and a
-        # FK photo_id would cascade-delete this audit row. Slice 4 will replace
-        # the DELETE+re-INSERT pattern with an in-place UPDATE that preserves id.
+        cur.execute(
+            "UPDATE photos SET bucket = %s, s3_key = %s WHERE id = %s",
+            (photos_bucket, dest_key, photo_id),
+        )
+        # Record the event under the *origin* (inbox) key so queries by the
+        # pre-promotion s3_key still find the trail. The destination is in details.
         record_event(
             cur, s3_key, inbox_bucket, "promoted", "inbox",
-            photo_id=None,
-            details={"content_hash": content_hash, "dest_bucket": photos_bucket, "dest_key": dest_key},
+            photo_id=photo_id,
+            details={"content_hash": content_hash, "to_bucket": photos_bucket, "to_key": dest_key},
         )
     return True
 
