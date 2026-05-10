@@ -21,20 +21,29 @@
 ## Architecture
 - `lambda/processor.py` — core tagging logic, called by `lambda/handler.py`
 - `lambda/searcher.py` — search logic, called by `lambda/searcher_handler.py`
+- `lambda/inbox.py` — inbox listing/promotion/archive, called by `lambda/inbox_handler.py`
+- `lambda/image_handler.py` — fires on upload-bucket S3 events; computes hash, thumbnails, copies to inbox, INSERTs the inbox `photos` row
+- `lambda/thumbnailer.py` / `lambda/thumbnailer_handler.py` — generates 400×400 WebP thumbnails
+- `lambda/exif.py` — shared `extract_captured_at()` helper used by processor + image_handler
+- `lambda/utils.py` — `get_required_env()`, `thumbnail_key()`, and `record_event()` (the shared photo_events writer used by every Lambda)
 - `db/migrations/` — SQL migration files, named `NNN_description.sql`
 - `features/` — BDD tests using behave
   - `features/steps/` — step definitions
   - `features/environment.py` — DB connection lifecycle and test teardown
-- `scripts/` — shell scripts for local dev operations
+- `scripts/` — shell scripts for local dev operations; `package-*.sh` builds Lambda zips, `deploy-*.sh` runs CloudFormation
 - `infra/` — CloudFormation templates for Lambda and S3 resources
 
 ## Conventions
 - Complex shell logic goes in `scripts/`, not inline in the Makefile
-- The processor never commits — the caller owns the transaction
+- The processor never commits — the caller owns the transaction. `record_error()` is the explicit exception: it opens its own transaction after the caller's rollback so failure-state writes survive
 - BDD tests use real services (Postgres, Anthropic API) — no mocking
 - Frontend BDD tests use Playwright with mocked Lambda URLs via `page.route()`
 - Tags are stored lowercase, upserted with `ON CONFLICT (LOWER(name)) DO UPDATE` — the tags table uses an expression index on `LOWER(name)`, not a column-level UNIQUE constraint
 - New features should have a failing BDD test written before implementation (TDD)
+- Every Lambda action writes a `photo_events` row via `utils.record_event()` (event types: `received`, `thumbnail_created`, `thumbnail_skipped`, `promoted`, `tagging_started`, `tagged`, `tag_failed`, `tag_added`, `tag_removed`, `archived`). Image_handler and thumbnailer wrap their DB writes in try/except so a Neon outage cannot break upload/thumbnail generation
+- `photos.state` (`received` / `tagged` / `failed` / `archived`) is the canonical lifecycle column. `processed_at` is kept as a parallel alias of `tagged_at` until a future migration drops it
+- Lambda packaging: each Lambda has its own `requirements-<name>-lambda.txt`; the `package-*.sh` script copies only the Lambda's source files plus shared modules (`utils.py`, `exif.py`) into the build dir. `image_handler` and `thumbnailer` bundle `psycopg2-binary` because `utils.py` imports `psycopg2.extras.Json` at module load
+- `features/environment.py` deletes `photo_events` rows by `s3_key` before the photos delete in teardown — `ON DELETE CASCADE` only handles events whose `photo_id` is set, but image_handler/thumbnailer events are written before the photos row exists
 
 ## Environment
 - Requires `.env` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, and `NEON_DATABASE_URL`
