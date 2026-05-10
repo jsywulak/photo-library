@@ -139,7 +139,8 @@ def archive_inbox_photo(s3_key: str, db_conn, inbox_bucket: str) -> bool:
     """Set archived_at on the inbox photo record. Returns False if not found."""
     with db_conn.cursor() as cur:
         cur.execute(
-            "UPDATE photos SET archived_at = NOW() WHERE s3_key = %s AND bucket = %s "
+            "UPDATE photos SET archived_at = NOW(), state = 'archived'"
+            " WHERE s3_key = %s AND bucket = %s "
             "RETURNING id",
             (s3_key, inbox_bucket),
         )

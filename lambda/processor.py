@@ -138,8 +138,9 @@ def record_error(conn, s3_key: str, error: Exception, bucket: str = _DEFAULT_BUC
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO photos (s3_key, bucket, last_error) VALUES (%s, %s, %s) "
-                "ON CONFLICT (s3_key, bucket) DO UPDATE SET last_error = EXCLUDED.last_error "
+                "INSERT INTO photos (s3_key, bucket, last_error, state) VALUES (%s, %s, %s, 'failed') "
+                "ON CONFLICT (s3_key, bucket) DO UPDATE SET "
+                "  last_error = EXCLUDED.last_error, state = 'failed' "
                 "RETURNING id",
                 (s3_key, bucket, str(error)),
             )
@@ -318,7 +319,8 @@ def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: b
     tags = get_tags_from_image(image_bytes, anthropic_client)
 
     cur.execute(
-        "UPDATE photos SET processed_at = NOW(), last_error = NULL WHERE id = %s",
+        "UPDATE photos SET processed_at = NOW(), tagged_at = NOW(), state = 'tagged', last_error = NULL"
+        " WHERE id = %s",
         (photo_id,),
     )
 
