@@ -107,6 +107,43 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ProcessorV2EventBridgeRule.Arn
 
+  # Dead-Letter Queue for async invocations that exhaust retries.
+  # The Lambda async-invoke path (EventBridge → Lambda, direct async invoke)
+  # publishes the failed event here so work isn't silently lost.
+  ProcessorV2DLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  # Permission for the Lambda role to write failed events to the DLQ.
+  ProcessorV2DLQPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ProcessorV2DLQWrite
+      Roles:
+        - !Ref ProcessorV2Role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt ProcessorV2DLQ.Arn
+
+  # Async-invoke config: skip retries (fail fast → DLQ) and route failures to SQS.
+  # MaximumRetryAttempts=0 keeps the test fast and avoids replaying expensive
+  # tagging work that we already know failed.
+  ProcessorV2EventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: ProcessorV2DLQPolicy
+    Properties:
+      FunctionName: !Ref ProcessorV2Function
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt ProcessorV2DLQ.Arn
+
 Outputs:
   ProcessorV2FunctionName:
     Description: Lambda function name (use as PROCESSOR_V2_LAMBDA_NAME in .env)
@@ -115,3 +152,11 @@ Outputs:
   ProcessorV2FunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt ProcessorV2Function.Arn
+
+  ProcessorV2DLQUrl:
+    Description: SQS URL for the processor v2 DLQ (use as PROCESSOR_V2_DLQ_URL in .env)
+    Value: !Ref ProcessorV2DLQ
+
+  ProcessorV2DLQArn:
+    Description: SQS ARN for the processor v2 DLQ
+    Value: !GetAtt ProcessorV2DLQ.Arn

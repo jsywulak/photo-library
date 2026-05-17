@@ -107,6 +107,36 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ImageHandlerEventBridgeRule.Arn
 
+  ImageHandlerDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  ImageHandlerDLQPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ImageHandlerDLQWrite
+      Roles:
+        - !Ref ImageHandlerRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt ImageHandlerDLQ.Arn
+
+  ImageHandlerEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: ImageHandlerDLQPolicy
+    Properties:
+      FunctionName: !Ref ImageHandlerFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt ImageHandlerDLQ.Arn
+
 Outputs:
   ImageHandlerFunctionName:
     Description: Lambda function name (use as IMAGE_LAMBDA_NAME in .env)
@@ -115,3 +145,11 @@ Outputs:
   ImageHandlerFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt ImageHandlerFunction.Arn
+
+  ImageHandlerDLQUrl:
+    Description: SQS URL for the image handler DLQ (use as IMAGE_LAMBDA_DLQ_URL in .env)
+    Value: !Ref ImageHandlerDLQ
+
+  ImageHandlerDLQArn:
+    Description: SQS ARN for the image handler DLQ
+    Value: !GetAtt ImageHandlerDLQ.Arn

@@ -125,6 +125,36 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ThumbnailerEventBridgeRule.Arn
 
+  ThumbnailerDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${AWS::StackName}-dlq'
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  ThumbnailerDLQPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ThumbnailerDLQWrite
+      Roles:
+        - !Ref ThumbnailerRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sqs:SendMessage
+            Resource: !GetAtt ThumbnailerDLQ.Arn
+
+  ThumbnailerEventInvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    DependsOn: ThumbnailerDLQPolicy
+    Properties:
+      FunctionName: !Ref ThumbnailerFunction
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 0
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt ThumbnailerDLQ.Arn
+
 Outputs:
   ThumbnailsBucketName:
     Description: Public S3 bucket for thumbnails
@@ -141,3 +171,11 @@ Outputs:
   ThumbnailerFunctionArn:
     Description: Lambda function ARN
     Value: !GetAtt ThumbnailerFunction.Arn
+
+  ThumbnailerDLQUrl:
+    Description: SQS URL for the thumbnailer DLQ (use as THUMBNAILER_DLQ_URL in .env)
+    Value: !Ref ThumbnailerDLQ
+
+  ThumbnailerDLQArn:
+    Description: SQS ARN for the thumbnailer DLQ
+    Value: !GetAtt ThumbnailerDLQ.Arn
