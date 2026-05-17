@@ -3,7 +3,7 @@ export
 
 CONTAINER_NAME = phototagger-db
 
-.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend test-e2e process search db-drop package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer package-stats deploy-stats package-image deploy-image backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket deploy-upload-bucket help clean
+.PHONY: install install-hooks install-playwright local-db-start local-db-shell local-db-stop local-migrate neon-migrate test test-unit test-frontend test-e2e process search db-drop package-processor-v2 deploy-processor-v2 package-searcher deploy-searcher package-inbox deploy-inbox package-thumbnailer deploy-thumbnailer package-stats deploy-stats package-image deploy-image backfill-thumbnails backfill-inbox-thumbnails sync-inbox neon-backup neon-tags neon-clean-tags neon-sync-check neon-reconcile neon-check-thumbnails neon-audit-thumbnails neon-clean-thumbnail-orphans neon-errors neon-no-tags neon-reprocess-errors neon-clean-orphans neon-overwrite-check migrate-to-hashes deploy-frontend deploy-photos-bucket deploy-inbox-bucket deploy-upload-bucket help clean
 
 help:
 	@echo "Local development:"
@@ -42,6 +42,7 @@ help:
 	@echo "  make neon-stats       Show photo/tag counts and top 5 tags"
 	@echo "  make neon-tags        Show tag counts from Neon"
 	@echo "  make neon-sync-check        Compare S3 listing vs DB (find unprocessed/orphaned)"
+	@echo "  make neon-reconcile         Write orphan_s3_only/orphan_db_only photo_events for drift"
 	@echo "  make neon-check-thumbnails        Report photos missing/orphaned thumbnails"
 	@echo "  make neon-audit-thumbnails        Three-way audit: S3 buckets, thumbnail bucket, DB"
 	@echo "  make neon-errors      List photos with processing errors"
@@ -172,6 +173,9 @@ neon-stats:
 
 neon-sync-check:
 	python scripts/sync_check.py
+
+neon-reconcile:
+	python scripts/reconcile_pipeline.py
 
 neon-check-thumbnails:
 	python scripts/check_thumbnails.py
