@@ -59,6 +59,11 @@ def _emit_thumbnail_event(s3_key: str, source_bucket: str, status: str, content_
                 )
                 row = cur.fetchone()
                 photo_id = row[0] if row else None
+                if photo_id is not None and event_type == "thumbnail_created":
+                    cur.execute(
+                        "UPDATE photos SET thumbnailed_at = NOW() WHERE id = %s",
+                        (photo_id,),
+                    )
                 details = {"content_hash": content_hash} if content_hash else None
                 record_event(
                     cur, s3_key, source_bucket, event_type, "thumbnailer",

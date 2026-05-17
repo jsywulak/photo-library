@@ -30,3 +30,10 @@ Feature: Thumbnailer Lambda
     And a test photo is uploaded to the photos bucket
     When the thumbnailer Lambda processes the photo
     Then the thumbnail should have source-hash metadata matching the photo's SHA-256
+
+  Scenario: Thumbnailer stamps thumbnailed_at on the photos row
+    Given the thumbnailer Lambda is deployed
+    And a test photo is uploaded to the photos bucket
+    And a photos row exists in Neon for the test photo
+    When the thumbnailer Lambda processes the photo
+    Then the photos row thumbnailed_at should be populated

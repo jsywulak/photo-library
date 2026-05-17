@@ -134,3 +134,39 @@ def step_thumbnail_has_matching_source_hash(context):
         f"Expected source-hash {context.test_expected_source_hash!r}, "
         f"got {metadata['source-hash']!r}"
     )
+
+
+@given("a photos row exists in Neon for the test photo")
+def step_seed_photos_row_for_thumbnailer_test(context):
+    import psycopg2
+    conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO photos (s3_key, bucket, content_hash) VALUES (%s, %s, %s)"
+                " ON CONFLICT (content_hash) DO UPDATE SET s3_key = EXCLUDED.s3_key, bucket = EXCLUDED.bucket",
+                (context.test_s3_key, context.test_s3_bucket, context.test_expected_source_hash),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    if not hasattr(context, "neon_test_s3_keys"):
+        context.neon_test_s3_keys = []
+    context.neon_test_s3_keys.append(context.test_s3_key)
+
+
+@then("the photos row thumbnailed_at should be populated")
+def step_photos_row_thumbnailed_at(context):
+    import psycopg2
+    conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT thumbnailed_at FROM photos WHERE content_hash = %s",
+                (context.test_expected_source_hash,),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, f"No photos row for content_hash={context.test_expected_source_hash!r}"
+    assert row[0] is not None, "Expected thumbnailed_at to be populated, got NULL"

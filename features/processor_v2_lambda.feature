@@ -23,3 +23,11 @@ Feature: Processor v2 Lambda
     When the v2 Lambda processes the photo
     Then the v2 photo should be stored in the Neon database
     And the v2 photo should have tags in the Neon database
+
+  Scenario: Processor v2 stamps tagged-by-model and pipeline-stage on the photos object
+    Given the processor v2 Lambda is deployed
+    And a test photo is uploaded to S3 v2
+    When the v2 Lambda processes the photo
+    Then the v2 photo should be stored in the Neon database
+    And the v2 photo object should have tagged-by-model metadata matching the configured model
+    And the v2 photo object should have pipeline-stage metadata "tagged"

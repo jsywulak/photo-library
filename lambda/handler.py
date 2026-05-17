@@ -34,6 +34,41 @@ def _extract_bucket_key(event):
     return None, None
 
 
+def _stamp_tagged_metadata(s3, bucket: str, key: str, conn) -> None:
+    """Self-CopyObject to stamp tagged-by-model + pipeline-stage=tagged on the
+    photo object after successful tagging. Best-effort — failures here must not
+    invalidate the DB commit that already ran. Only runs when tagged_by_model
+    is set, which gates out inbox-bucket invocations (where no tagging happens).
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT content_hash, original_filename, tagged_by_model"
+                " FROM photos WHERE s3_key = %s AND bucket = %s",
+                (key, bucket),
+            )
+            row = cur.fetchone()
+        if not row:
+            return
+        content_hash, original_filename, tagged_by_model = row
+        if not tagged_by_model:
+            return
+        metadata = {"pipeline-stage": "tagged", "tagged-by-model": tagged_by_model}
+        if content_hash:
+            metadata["content-hash"] = content_hash
+        if original_filename:
+            metadata["original-filename"] = original_filename
+        s3.copy_object(
+            CopySource={"Bucket": bucket, "Key": key},
+            Bucket=bucket,
+            Key=key,
+            Metadata=metadata,
+            MetadataDirective="REPLACE",
+        )
+    except Exception:
+        logger.exception("Failed to stamp tagged metadata on s3://%s/%s", bucket, key)
+
+
 def lambda_handler(event, context):
     bucket, key = _extract_bucket_key(event)
 
@@ -42,12 +77,9 @@ def lambda_handler(event, context):
 
     logger.info("Processing s3://%s/%s", bucket, key)
 
+    s3 = boto3.client("s3")
     try:
-        image_bytes = (
-            boto3.client("s3")
-            .get_object(Bucket=bucket, Key=key)["Body"]
-            .read()
-        )
+        image_bytes = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
         if error_code in ("NoSuchKey", "AccessDenied"):
@@ -61,6 +93,8 @@ def lambda_handler(event, context):
         status = process_one(key, image_bytes, conn, anthropic.Anthropic(max_retries=4), bucket=bucket)
         conn.commit()
         logger.info("Completed s3://%s/%s: %s", bucket, key, status)
+        if status == "processed":
+            _stamp_tagged_metadata(s3, bucket, key, conn)
         return {"status": status, "s3_key": key}
     except Exception as e:
         conn.rollback()

@@ -168,3 +168,26 @@ def step_v2_photo_has_tags(context):
         assert count > 0, f"No tags found for photo {context.test_s3_key!r}"
     finally:
         conn.close()
+
+
+@then("the v2 photo object should have tagged-by-model metadata matching the configured model")
+def step_v2_photo_object_tagged_by_model(context):
+    response = boto3.client("s3").head_object(
+        Bucket=context.test_s3_bucket, Key=context.test_s3_key,
+    )
+    metadata = response.get("Metadata", {})
+    expected = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    assert metadata.get("tagged-by-model") == expected, (
+        f"Expected tagged-by-model {expected!r}, got {metadata.get('tagged-by-model')!r}"
+    )
+
+
+@then('the v2 photo object should have pipeline-stage metadata "{expected}"')
+def step_v2_photo_object_pipeline_stage(context, expected):
+    response = boto3.client("s3").head_object(
+        Bucket=context.test_s3_bucket, Key=context.test_s3_key,
+    )
+    metadata = response.get("Metadata", {})
+    assert metadata.get("pipeline-stage") == expected, (
+        f"Expected pipeline-stage {expected!r}, got {metadata.get('pipeline-stage')!r}"
+    )

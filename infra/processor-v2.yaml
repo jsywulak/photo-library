@@ -57,6 +57,12 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:s3:::${PhotosBucket}'
                   - !Sub 'arn:aws:s3:::${InboxBucket}'
+              # PutObject is required for the post-tagging self-CopyObject that
+              # stamps tagged-by-model + pipeline-stage=tagged metadata onto the
+              # photo object. Limited to the photos bucket — we never write to inbox.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${PhotosBucket}/*'
 
   ProcessorV2Function:
     Type: AWS::Lambda::Function
