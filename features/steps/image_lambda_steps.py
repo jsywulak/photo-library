@@ -305,3 +305,47 @@ def step_one_photos_row_for_content_hash(context, bucket):
         f"Expected exactly 1 photos row for content_hash={context.test_expected_content_hash!r}, "
         f"got {count}"
     )
+
+
+@then("the inbox object should have content-hash metadata matching the photo's SHA-256")
+def step_inbox_object_has_content_hash_metadata(context):
+    s3 = boto3.client("s3")
+    response = s3.head_object(Bucket=context.test_s3_bucket, Key=context.test_s3_key)
+    metadata = response.get("Metadata", {})
+    assert "content-hash" in metadata, (
+        f"Expected 'content-hash' in inbox object metadata, got: {metadata}"
+    )
+    assert metadata["content-hash"] == context.test_expected_content_hash, (
+        f"Expected content-hash {context.test_expected_content_hash!r}, "
+        f"got {metadata['content-hash']!r}"
+    )
+
+
+@then('the inbox object should have pipeline-stage metadata "{stage}"')
+def step_inbox_object_has_pipeline_stage_metadata(context, stage):
+    s3 = boto3.client("s3")
+    response = s3.head_object(Bucket=context.test_s3_bucket, Key=context.test_s3_key)
+    metadata = response.get("Metadata", {})
+    assert "pipeline-stage" in metadata, (
+        f"Expected 'pipeline-stage' in inbox object metadata, got: {metadata}"
+    )
+    assert metadata["pipeline-stage"] == stage, (
+        f"Expected pipeline-stage {stage!r}, got {metadata['pipeline-stage']!r}"
+    )
+
+
+@then("the photos row uploaded_at should be populated")
+def step_photos_row_uploaded_at(context):
+    import psycopg2
+    conn = psycopg2.connect(os.environ["NEON_DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT uploaded_at FROM photos WHERE s3_key = %s AND bucket = %s",
+                (context.test_s3_key, context.test_s3_bucket),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row is not None, f"No photos row for s3_key={context.test_s3_key!r}"
+    assert row[0] is not None, "Expected uploaded_at to be populated, got NULL"

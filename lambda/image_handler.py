@@ -57,8 +57,8 @@ def _record_inbox_photo(
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename)"
-                    " VALUES (%s, %s, %s, %s, %s)"
+                    "INSERT INTO photos (s3_key, bucket, captured_at, content_hash, original_filename, uploaded_at)"
+                    " VALUES (%s, %s, %s, %s, %s, NOW())"
                     " ON CONFLICT DO NOTHING RETURNING id",
                     (s3_key, _INBOX_BUCKET, captured_at, content_hash, original_filename),
                 )
@@ -134,7 +134,11 @@ def lambda_handler(event, context):
         Key=dest_key,
         Body=image_bytes,
         ContentType="image/jpeg",
-        Metadata={"original-filename": original_filename},
+        Metadata={
+            "original-filename": original_filename,
+            "content-hash": content_hash,
+            "pipeline-stage": "received",
+        },
     )
     logger.info("Written to s3://%s/%s (original: %s)", _INBOX_BUCKET, dest_key, original_filename)
 

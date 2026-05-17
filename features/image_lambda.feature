@@ -55,3 +55,17 @@ Feature: Image Handler Lambda
     When the same photo content is uploaded to the upload bucket under a different key
     And the image handler Lambda processes the new upload
     Then exactly one photos row should exist in Neon for the content_hash with bucket "photo-tagging-inbox"
+
+  Scenario: Image handler writes content-hash and pipeline-stage metadata on the inbox object
+    Given the image handler Lambda is deployed
+    And a test photo is uploaded to the upload bucket
+    When the image handler Lambda processes the photo
+    Then the inbox object should have content-hash metadata matching the photo's SHA-256
+    And the inbox object should have pipeline-stage metadata "received"
+
+  Scenario: Image handler populates uploaded_at on the photos row
+    Given the image handler Lambda is deployed
+    And a test photo is uploaded to the upload bucket
+    When the image handler Lambda processes the photo
+    Then a photos row should exist in Neon for the inbox key with bucket "photo-tagging-inbox"
+    And the photos row uploaded_at should be populated
