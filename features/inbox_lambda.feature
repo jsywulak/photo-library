@@ -71,3 +71,12 @@ Feature: Inbox Lambda
     Given the inbox Lambda is deployed
     When the inbox Function URL POST /process-inbox is called with an incorrect API key
     Then the HTTP response status should be 401 v2
+
+  Scenario: POST /process-inbox propagates S3 metadata onto the photos-bucket object
+    Given the inbox Lambda is deployed
+    And a photo with captured_at "2024-06-15 12:00:00", original_filename "vacation.jpg", and a known content_hash exists in the inbox
+    When the inbox Function URL POST /process-inbox is called for the inbox photo with the correct API key
+    Then the HTTP response status should be 200 v2
+    And the photos-bucket object should have content-hash metadata matching the inbox content_hash
+    And the photos-bucket object should have original-filename metadata "vacation.jpg"
+    And the photos-bucket object should have pipeline-stage metadata "awaiting_review"

@@ -444,3 +444,39 @@ def step_archived_photo_not_in_inbox(context):
     assert context.inbox_s3_key not in keys, (
         f"Expected archived photo {context.inbox_s3_key!r} to be absent from inbox, but found it"
     )
+
+
+def _head_photos_bucket_object(context):
+    s3 = boto3.client("s3")
+    hash_key = f"{context.inbox_content_hash}.jpg"
+    if not hasattr(context, "searcher_s3_uploads"):
+        context.searcher_s3_uploads = []
+    context.searcher_s3_uploads.append((os.environ["S3_BUCKET"], hash_key))
+    return s3.head_object(Bucket=os.environ["S3_BUCKET"], Key=hash_key)
+
+
+@then("the photos-bucket object should have content-hash metadata matching the inbox content_hash")
+def step_photos_bucket_content_hash_metadata(context):
+    response = _head_photos_bucket_object(context)
+    metadata = response.get("Metadata", {})
+    assert metadata.get("content-hash") == context.inbox_content_hash, (
+        f"Expected content-hash {context.inbox_content_hash!r}, got {metadata.get('content-hash')!r}"
+    )
+
+
+@then('the photos-bucket object should have original-filename metadata "{expected}"')
+def step_photos_bucket_original_filename_metadata(context, expected):
+    response = _head_photos_bucket_object(context)
+    metadata = response.get("Metadata", {})
+    assert metadata.get("original-filename") == expected, (
+        f"Expected original-filename {expected!r}, got {metadata.get('original-filename')!r}"
+    )
+
+
+@then('the photos-bucket object should have pipeline-stage metadata "{expected}"')
+def step_photos_bucket_pipeline_stage_metadata(context, expected):
+    response = _head_photos_bucket_object(context)
+    metadata = response.get("Metadata", {})
+    assert metadata.get("pipeline-stage") == expected, (
+        f"Expected pipeline-stage {expected!r}, got {metadata.get('pipeline-stage')!r}"
+    )

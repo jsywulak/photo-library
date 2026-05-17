@@ -108,19 +108,24 @@ def process_inbox_photo(s3_key: str, db_conn, s3_client, inbox_bucket: str, phot
     """
     with db_conn.cursor() as cur:
         cur.execute(
-            "SELECT id, content_hash FROM photos WHERE s3_key = %s AND bucket = %s",
+            "SELECT id, content_hash, original_filename FROM photos WHERE s3_key = %s AND bucket = %s",
             (s3_key, inbox_bucket),
         )
         row = cur.fetchone()
         if not row:
             return False
-        photo_id, content_hash = row
+        photo_id, content_hash, original_filename = row
 
     dest_key = f"{content_hash}.jpg"
+    metadata = {"content-hash": content_hash, "pipeline-stage": "awaiting_review"}
+    if original_filename:
+        metadata["original-filename"] = original_filename
     s3_client.copy_object(
         CopySource={"Bucket": inbox_bucket, "Key": s3_key},
         Bucket=photos_bucket,
         Key=dest_key,
+        Metadata=metadata,
+        MetadataDirective="REPLACE",
     )
     s3_client.delete_object(Bucket=inbox_bucket, Key=s3_key)
     with db_conn.cursor() as cur:
