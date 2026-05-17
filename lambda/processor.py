@@ -319,9 +319,10 @@ def _tag_photo(cur, anthropic_client, photo_id: int, s3_key: str, image_bytes: b
     tags = get_tags_from_image(image_bytes, anthropic_client)
 
     cur.execute(
-        "UPDATE photos SET processed_at = NOW(), tagged_at = NOW(), state = 'tagged', last_error = NULL"
+        "UPDATE photos SET processed_at = NOW(), tagged_at = NOW(), state = 'tagged',"
+        " tagged_by_model = %s, last_error = NULL"
         " WHERE id = %s",
-        (photo_id,),
+        (_get_model(), photo_id),
     )
 
     for tag_name in tags:

@@ -93,3 +93,9 @@ Feature: Photo processing pipeline
     When the processor runs for bucket "photo-tagging-photos"
     Then 0 photos should be processed
     And 1 photo should be skipped
+
+  Scenario: Processor records the model that produced the tags
+    Given a local directory with photos "photo1.jpg"
+    When the processor runs
+    Then "photo1.jpg" should have tagged_by_model set to the configured ANTHROPIC_MODEL in the database
+    And every photo_tags row for "photo1.jpg" should have added_by "ai"

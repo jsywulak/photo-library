@@ -456,3 +456,33 @@ def step_has_tags(context, key):
         )
         count = cur.fetchone()[0]
     assert count > 0, f"No tags found for {db_key!r}"
+
+
+@then('"{key}" should have tagged_by_model set to the configured ANTHROPIC_MODEL in the database')
+def step_has_tagged_by_model(context, key):
+    import os
+    db_key = context.key_map.get(key, key)
+    expected = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    with context.conn.cursor() as cur:
+        cur.execute("SELECT tagged_by_model FROM photos WHERE s3_key = %s", (db_key,))
+        row = cur.fetchone()
+    assert row, f"{db_key!r} not found in photos"
+    assert row[0] == expected, f"Expected tagged_by_model={expected!r}, got {row[0]!r}"
+
+
+@then('every photo_tags row for "{key}" should have added_by "{added_by}"')
+def step_photo_tags_added_by(context, key, added_by):
+    db_key = context.key_map.get(key, key)
+    with context.conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT pt.added_by FROM photo_tags pt
+            JOIN photos p ON p.id = pt.photo_id
+            WHERE p.s3_key = %s
+            """,
+            (db_key,),
+        )
+        rows = cur.fetchall()
+    assert rows, f"No photo_tags rows found for {db_key!r}"
+    bad = [r[0] for r in rows if r[0] != added_by]
+    assert not bad, f"Expected every photo_tags.added_by={added_by!r}, got {bad!r}"

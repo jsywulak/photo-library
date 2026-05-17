@@ -132,3 +132,11 @@ Feature: Searcher Lambda
     When the Function URL POST /archive is called with an incorrect API key
     Then the HTTP response status should be 401
 
+  Scenario: POST /add-tags marks new photo_tags as added_by "user"
+    Given the searcher Lambda is deployed
+    And a photo exists in the Neon database tagged with "animal"
+    When the Function URL POST /add-tags is called for the photo with tags "wire, cozy" and the correct API key
+    Then the HTTP response status should be 200
+    And the photo_tags rows for "wire" and "cozy" should have added_by "user" in Neon
+    And the photo_tags row for "animal" should still have added_by "ai" in Neon
+

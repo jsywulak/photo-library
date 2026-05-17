@@ -442,3 +442,53 @@ def step_presigned_url_accessible(context):
     req = urllib.request.Request(result["url"], method="GET")
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200, f"Expected 200 from presigned URL, got {resp.status}"
+
+
+@then('the photo_tags rows for "{tag1}" and "{tag2}" should have added_by "{added_by}" in Neon')
+def step_photo_tags_added_by_two(context, tag1, tag2, added_by):
+    conn = neon_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT t.name, pt.added_by
+                FROM photo_tags pt
+                JOIN photos p ON p.id = pt.photo_id
+                JOIN tags t ON t.id = pt.tag_id
+                WHERE p.s3_key = %s AND t.name IN (%s, %s)
+                """,
+                (context.last_photo_key, tag1.lower(), tag2.lower()),
+            )
+            rows = dict(cur.fetchall())
+    finally:
+        conn.close()
+    assert tag1.lower() in rows, f"No photo_tags row for {tag1!r}"
+    assert tag2.lower() in rows, f"No photo_tags row for {tag2!r}"
+    assert rows[tag1.lower()] == added_by, (
+        f"Expected {tag1!r} added_by={added_by!r}, got {rows[tag1.lower()]!r}"
+    )
+    assert rows[tag2.lower()] == added_by, (
+        f"Expected {tag2!r} added_by={added_by!r}, got {rows[tag2.lower()]!r}"
+    )
+
+
+@then('the photo_tags row for "{tag}" should still have added_by "{added_by}" in Neon')
+def step_photo_tags_added_by_one(context, tag, added_by):
+    conn = neon_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT pt.added_by
+                FROM photo_tags pt
+                JOIN photos p ON p.id = pt.photo_id
+                JOIN tags t ON t.id = pt.tag_id
+                WHERE p.s3_key = %s AND t.name = %s
+                """,
+                (context.last_photo_key, tag.lower()),
+            )
+            row = cur.fetchone()
+    finally:
+        conn.close()
+    assert row, f"No photo_tags row for {tag!r}"
+    assert row[0] == added_by, f"Expected {tag!r} added_by={added_by!r}, got {row[0]!r}"

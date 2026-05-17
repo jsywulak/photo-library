@@ -82,8 +82,8 @@ def add_tags(s3_key: str, tags: list[str], db_conn) -> int | None:
             tag_id = cur.fetchone()[0]
             cur.execute(
                 """
-                INSERT INTO photo_tags (photo_id, tag_id)
-                VALUES (%s, %s)
+                INSERT INTO photo_tags (photo_id, tag_id, added_by)
+                VALUES (%s, %s, 'user')
                 ON CONFLICT (photo_id, tag_id) DO UPDATE SET removed_at = NULL
                 """,
                 (photo_id, tag_id),
