@@ -23,7 +23,7 @@ Every action emits a `photo_events` row (audit log). See **Observability** below
 - **Compute** — Python 3.12 on AWS Lambda. Each Lambda has its own deployment zip and CloudFormation stack.
 - **Database** — Neon serverless Postgres (production), local Docker Postgres (dev/test).
 - **Storage** — S3 (upload + inbox + photos + thumbnail buckets).
-- **Eventing** — EventBridge S3 Object Created rules trigger image_handler, processor v2, and thumbnailer.
+- **Eventing** — EventBridge S3 Object Created rules trigger image_handler, processor v2, and thumbnailer. Each async Lambda has a dedicated SQS DLQ (14-day retention, `MaximumRetryAttempts=0`) wired via `AWS::Lambda::EventInvokeConfig`.
 - **Tagging** — Anthropic vision API (`ANTHROPIC_MODEL`, default `claude-opus-4-6`).
 - **Frontend** — static HTML/JS hosted on S3, talks to Lambda Function URLs with an `x-api-key` header.
 - **Tests** — [behave](https://behave.readthedocs.io/) BDD suite, no mocks (real Postgres, real Anthropic, real AWS for `@infrastructure` scenarios).
@@ -59,10 +59,11 @@ photos (
   content_hash TEXT UNIQUE,                 -- SHA-256, single-column unique across all buckets
   original_filename TEXT,                   -- preserved from upload
   captured_at TIMESTAMPTZ,                  -- from EXIF DateTimeOriginal
-  uploaded_at TIMESTAMPTZ,                  -- not yet populated (Slice 6 wires this up)
-  thumbnailed_at TIMESTAMPTZ,               -- not yet populated
+  uploaded_at TIMESTAMPTZ,                  -- set by image_handler on initial INSERT
+  thumbnailed_at TIMESTAMPTZ,               -- set by thumbnailer_handler after a WebP write
   state TEXT NOT NULL DEFAULT 'received',   -- received | tagged | failed | archived
   tagged_at TIMESTAMPTZ,
+  tagged_by_model TEXT,                     -- Anthropic model that produced the tags
   processed_at TIMESTAMPTZ,                 -- alias of tagged_at, will drop in a future migration
   archived_at TIMESTAMPTZ,
   last_error TEXT,
@@ -77,6 +78,8 @@ tags (
 photo_tags (
   photo_id BIGINT REFERENCES photos(id) ON DELETE CASCADE,
   tag_id BIGINT REFERENCES tags(id) ON DELETE CASCADE,
+  added_by TEXT NOT NULL DEFAULT 'ai',      -- 'ai' (processor) | 'user' (searcher /add-tags)
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   removed_at TIMESTAMPTZ,                   -- soft-delete from /remove-tag
   PRIMARY KEY (photo_id, tag_id)
 );
@@ -89,7 +92,8 @@ photo_events (                              -- append-only audit log; one row pe
   event_type TEXT NOT NULL,                 -- received | thumbnail_created | thumbnail_skipped | promoted
                                             -- | tagging_started | tagged | tag_failed | tag_added
                                             -- | tag_removed | archived
-  actor TEXT NOT NULL,                      -- which Lambda wrote it
+                                            -- | orphan_s3_only | orphan_db_only  (written by reconciler)
+  actor TEXT NOT NULL,                      -- which Lambda wrote it (or 'reconciler')
   details JSONB,                            -- model name, tag name, error string, etc.
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -210,7 +214,8 @@ make neon-stats                       # photo + tag counts, top tags
 make neon-tags                        # full tag distribution
 make neon-errors                      # photos with state='failed'
 make neon-no-tags                     # tagged photos with zero tag rows (silent failures)
-make neon-sync-check                  # S3 vs DB drift
+make neon-sync-check                  # S3 vs DB drift (read-only report)
+make neon-reconcile                   # write orphan_s3_only/orphan_db_only photo_events for drift
 make neon-check-thumbnails            # missing/orphaned thumbnails
 make neon-audit-thumbnails            # three-way audit (photos / inbox / thumbnails)
 make neon-clean-tags                  # delete orphaned tags
